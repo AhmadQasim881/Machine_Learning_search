@@ -6,12 +6,14 @@ harness.cli — the command line over the harness.
     python -m harness --db harness.db classify [--classifier model.pkl] [--all]
     python -m harness --db harness.db score                  # CVSS vector/prior -> base score
     python -m harness --db harness.db enrich   [--no-epss] [--no-kev] [--nvd]
-    python -m harness --db harness.db prioritize             # fuse CVSS+EPSS+KEV+PoC
+    python -m harness --db harness.db predict-exploit [--model expl.pkl]  # finding-level P(exploit)
+    python -m harness --db harness.db prioritize             # fuse CVSS+likelihood+KEV+PoC
     python -m harness --db harness.db list     [--status needs_review] [--sort priority]
     python -m harness --db harness.db show     --id <id>
     python -m harness --db harness.db export   --out findings_dd.json   # DefectDojo
-    python -m harness train     --data cwe.jsonl --model model.pkl
-    python -m harness evaluate  --data cwe.jsonl [--train-frac 0.8]
+    python -m harness train          --data cwe.jsonl --model model.pkl
+    python -m harness evaluate       --data cwe.jsonl [--train-frac 0.8]
+    python -m harness train-exploit  --data exploit.jsonl --model expl.pkl
     python -m harness adapters
 
 Stdlib argparse only. The CLI wires the stages together; the real work lives in
@@ -229,6 +231,75 @@ def _cmd_prioritize(args) -> int:
     return 0
 
 
+def _cmd_predict_exploit(args) -> int:
+    """Finding-level exploit-likelihood: writes exploit.exploit_likelihood for
+    every finding, using a trained model if given, else the transparent heuristic."""
+    from .score import ExploitLikelihoodModel, heuristic_likelihood
+    from .enrich import KevCatalog
+
+    model = None
+    if args.model:
+        try:
+            model = ExploitLikelihoodModel.load(args.model)
+        except Exception as e:  # noqa: BLE001
+            print(f"[-] could not load exploit model: {e}", file=sys.stderr)
+            return 1
+
+    kev = None
+    if not args.no_kev:
+        try:
+            kev = KevCatalog(); kev.refresh()
+        except Exception:  # noqa: BLE001
+            kev = None
+
+    def cve_of(f):
+        for cand in [f.source_ref] + list(f.tags):
+            if cand and cand.upper().startswith("CVE-"):
+                return cand.upper()
+        return None
+
+    src = f"model:{model.name}" if model else "heuristic"
+    n = 0
+    with Store(args.db) as store:
+        for f in store.iter_findings():
+            cve = cve_of(f)
+            in_kev = bool(kev and cve and kev.contains(cve)) or ("kev" in [t.lower() for t in f.tags])
+            # read EPSS from the finding's own enrichment before we overwrite
+            epss = f.exploit.exploit_likelihood if f.exploit.likelihood_source == "epss" else None
+            if model:
+                p = model.predict_for_finding(f, epss=epss, in_kev=in_kev)
+            else:
+                p = heuristic_likelihood(f, epss=epss, in_kev=in_kev)
+            f.exploit.exploit_likelihood = p
+            f.exploit.likelihood_source = src
+            store.upsert(f)
+            n += 1
+    print(f"[+] predicted finding-level exploit-likelihood for {n} finding(s) "
+          f"using '{src}'. Run 'prioritize' next.")
+    if model:
+        print("    top model features:", ", ".join(f"{k}={w}" for k, w in model.top_weights(6)))
+    return 0
+
+
+def _cmd_train_exploit(args) -> int:
+    try:
+        from .score import ExploitLikelihoodModel
+    except ImportError:
+        print("[-] training needs scikit-learn (pip install scikit-learn)", file=sys.stderr)
+        return 1
+    rows = _load_rows(args.data)
+    if not rows:
+        print("[-] no training rows", file=sys.stderr)
+        return 1
+    model = ExploitLikelihoodModel.train(rows)
+    model.save(args.model)
+    pos = sum(int(r.get("exploited", 0)) for r in rows)
+    print(f"[+] trained exploit-likelihood model on {len(rows)} rows "
+          f"({pos} exploited / {len(rows) - pos} not) -> {args.model}")
+    print("    top features:", ", ".join(f"{k}={w}" for k, w in model.top_weights(8)))
+    return 0
+
+
 def _cmd_list(args) -> int:
     status = Status(args.status) if args.status else None
     with Store(args.db) as store:
@@ -354,6 +425,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--no-kev", action="store_true")
     sp.set_defaults(func=_cmd_prioritize)
 
+    sp = sub.add_parser("predict-exploit",
+                        help="finding-level exploit-likelihood (trained model or heuristic)")
+    sp.add_argument("--model", help="trained exploit model (.pkl); omit to use the heuristic")
+    sp.add_argument("--no-kev", action="store_true")
+    sp.set_defaults(func=_cmd_predict_exploit)
+
     sp = sub.add_parser("list", help="list findings")
     sp.add_argument("--status")
     sp.add_argument("--sort", choices=["priority", "updated"], default="updated")
@@ -377,6 +454,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--train-frac", type=float, default=0.8)
     sp.add_argument("--gate", type=float, default=0.80)
     sp.set_defaults(func=_cmd_evaluate)
+
+    sp = sub.add_parser("train-exploit", help="train the finding-level exploit-likelihood model")
+    sp.add_argument("--data", required=True, help="JSONL/JSON of feature rows + 'exploited' 0/1")
+    sp.add_argument("--model", required=True, help="output model path (.pkl)")
+    sp.set_defaults(func=_cmd_train_exploit)
     return p
 
 

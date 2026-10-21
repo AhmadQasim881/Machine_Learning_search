@@ -7,7 +7,7 @@ prioritize → export to a backbone. Built from the research review in `docs/`.
 **v0.2 — now a working brain, not just a skeleton.** Real trainable CWE
 classifier, a correct offline CVSS v3.1 calculator, EPSS/KEV/NVD enrichment,
 transparent prioritization, a temporal-split evaluation harness, and a
-DefectDojo exporter. 34 tests pass.
+DefectDojo exporter. 40 tests pass.
 
 > ⚠️ **Authorized testing only.** Use this only against targets you have written
 > permission to test, within the program's scope **and** rules of engagement.
@@ -35,7 +35,7 @@ to prototype the ML enrichment, not a reinvention of a vuln-management platform.
 
 ```bash
 cd harness
-python -m unittest discover -s tests        # 34 tests (stdlib; sklearn tests skip if absent)
+python -m unittest discover -s tests        # 40 tests (stdlib; sklearn tests skip if absent)
 
 # --- core pipeline (no installs needed) ---
 python -m harness --db demo.db init
@@ -57,8 +57,22 @@ python -m harness --db demo.db classify --classifier model.pkl
 
 # --- enrichment (needs internet on YOUR machine; keys off CVE ids) ---
 python -m harness --db demo.db enrich --nvd         # EPSS + CISA KEV + NVD
-python -m harness --db demo.db prioritize           # now KEV/EPSS-aware
+python -m harness --db demo.db predict-exploit      # finding-level P(exploit) — heuristic
+python -m harness --db demo.db prioritize           # now KEV/EPSS/likelihood-aware
+
+# --- finding-level exploit-likelihood MODEL (the original piece) ---
+# build a real training set from cvss-bt (needs internet), then train + use it:
+python tools/build_exploit_dataset.py --out exploit_train.jsonl
+python -m harness train-exploit --data exploit_train.jsonl --model expl.pkl
+python -m harness --db demo.db predict-exploit --model expl.pkl
 ```
+
+> **Finding-level exploit-likelihood** is the one piece the research flags as
+> genuinely original: EPSS/KEV are CVE-level, but a bug-bounty finding is
+> finding-level and often has *no CVE*. `predict-exploit` fuses EPSS + KEV +
+> verified-PoC + CVSS + CWE into one P(exploit), with a transparent heuristic by
+> default and a model (trained on cvss-bt) when you have one. The shipped
+> `samples/exploit_training_sample.jsonl` is SYNTHETIC — use cvss-bt for real numbers.
 
 > ⚠️ **The shipped `samples/cwe_training_sample.jsonl` is SYNTHETIC** (templated)
 > and will score ~100% — it only proves the code runs. Build a real set with
@@ -79,12 +93,12 @@ python -m harness --db demo.db prioritize           # now KEV/EPSS-aware
 | **4. Dedup/cluster** | exact-duplicate collapse (`store.add_deduped`) | **exact only** | Embed + UMAP/HDBSCAN for near-duplicates |
 | **5. CWE classify** | keyword baseline **+ real TF-IDF/LogReg model** (`train`/`classify --classifier`) + gate | **working** | Simonetto two-step / RoBERTa-125M; multi-label |
 | **6. CVSS score** | **offline v3.1 calculator** (`score`) + NVD vector pull (`enrich --nvd`) | **working (v3.1 base)** | Per-metric text→vector model (Marchiori/Costa); v4.0 |
-| **7. Prioritize** | **EPSS + KEV enrichment + transparent fusion** (`enrich`, `prioritize`) | **working** | Learned finding-level P(exploit) model (train on cvss-bt) |
+| **7. Prioritize** | EPSS + KEV enrichment, **finding-level exploit-likelihood model** (`predict-exploit`, heuristic or trained on cvss-bt), transparent fusion (`prioritize`) | **working** | Richer features; calibration on real data |
 | **8. Report** | **DefectDojo generic-import export** (`export`) | **export works** | ATT&CK/CAPEC enrichment (GuardLink/VWC-MAP); Sun templates |
 
 Working today: schema, store, ingest, keyword + trained CWE classifier, the gate,
 CVSS v3.1 scoring, EPSS/KEV/NVD enrichment, transparent prioritization, temporal
-evaluation, DefectDojo export, CLI, 34 tests. Enrichment needs internet; the
+evaluation, DefectDojo export, exploit-likelihood, CLI, 40 tests. Enrichment needs internet; the
 trained classifier needs scikit-learn.
 
 ---
@@ -102,18 +116,21 @@ harness/
     sklearn_model.py   REAL trainable TF-IDF + LogReg classifier (train/save/load)
     ../data/cwe_keywords.json   web-focused CWE keyword table
   score/cvss31.py      offline, correct CVSS v3.1 base-score calculator
+  score/priors.py      CWE -> CVSS v3.1 vector priors (Miyamoto-style seed)
+  score/exploit_likelihood.py  finding-level P(exploit): heuristic + trainable model
   enrich/              EPSS + CISA KEV + NVD clients (cached, fail-soft)
-  prioritize.py        transparent CVSS+EPSS+KEV+PoC fusion (Stage 7)
+  prioritize.py        transparent CVSS+likelihood+KEV+PoC fusion (Stage 7)
   evaluate.py          temporal-split evaluation of the CWE classifier
   export/defectdojo.py Finding -> DefectDojo generic-import JSON
   cli.py / __main__.py the command line
-tools/build_nvd_dataset.py   build a real CVE->CWE training set from NVD
-tests/                 stdlib unittest (34 tests)
+tools/build_nvd_dataset.py       build a real CVE->CWE training set from NVD
+tools/build_exploit_dataset.py   build an exploit-likelihood training set from cvss-bt
+tests/                 stdlib unittest (40 tests)
 samples/               example nuclei output + synthetic CWE training data
 SCOPE_AND_ROE.md       Stage-0 authorization template
 ```
 
-**Pipeline order:** `ingest → classify → score → enrich → prioritize → export`.
+**Pipeline order:** `ingest → classify → score → enrich → predict-exploit → prioritize → export`.
 Each stage reads/writes the one `Finding` record; every ML output is a
 confidence-gated suggestion, never an authority.
 
