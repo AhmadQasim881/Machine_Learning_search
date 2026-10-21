@@ -1,0 +1,56 @@
+1- https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=11326354
+2- https://ieeexplore.ieee.org/document/10633514
+3- https://www.sciencedirect.com/science/article/pii/S0167404823001967
+4- https://ieeexplore.ieee.org/document/9786831
+5- https://arxiv.org/abs/2111.08510
+6- https://hal.science/hal-02895913
+7- https://ieeexplore.ieee.org/document/8094415/
+8- https://ieeexplore.ieee.org/document/7809535
+--------------------------------------------------------------------------------------------
+9- https://ieeexplore.ieee.org/document/10284627
+10- https://hal.science/hal-02895913
+--------------------------------------------------------------------------------------------
+11- https://ieeexplore.ieee.org/document/9559092
+12- https://link.springer.com/chapter/10.1007/978-3-030-77967-2_21
+--------------------------------------------------------------------------------------------
+13- https://dl.acm.org/doi/10.1145/3779208.3785376
+14- https://hal.science/hal-05500820
+15- https://arxiv.org/abs/2603.14911
+16- https://aclanthology.org/2023.findings-acl.229/
+17- https://arxiv.org/abs/2304.11130
+18- https://ieeexplore.ieee.org/document/9527965
+19- https://arxiv.org/abs/2102.11498
+20- https://ieeexplore.ieee.org/document/9219568
+21- https://link.springer.com/chapter/10.1007/978-3-030-63086-7_2
+--------------------------------------------------------------------------------------------
+22- https://hal.science/hal-05500820
+23- https://arxiv.org/abs/2501.07131
+24- https://ieeexplore.ieee.org/document/10025459
+--------------------------------------------------------------------------------------------
+25- https://hal.science/hal-05500820
+26- http://aics.site/AICS2024/AICS_CyberBench.pdf
+27- https://ieeexplore.ieee.org/document/10900988
+28- https://link.springer.com/chapter/10.1007/978-3-031-37586-6_15
+29- https://www.semanticscholar.org/paper/Linking-CVE%E2%80%99s-to-MITRE-ATT%26CK-Techniques-Kuppa-Aouad/815eb6058eb8813f1982b5a62445ed05381079dc
+30- https://arxiv.org/abs/2108.01696
+--------------------------------------------------------------------------------------------
+31- https://arxiv.org/abs/2604.22176
+32- https://ieeexplore.ieee.org/document/11126673
+--------------------------------------------------------------------------------------------
+33- https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0228439
+34- https://ebooks.iospress.nl/volumearticle/41264
+35- https://dl.acm.org/doi/10.1145/1835804.1835821
+--------------------------------------------------------------------------------------------
+36- https://arxiv.org/abs/2101.01431
+--------------------------------------------------------------------------------------------
+37- https://arxiv.org/pdf/2509.01835
+38- https://ieeexplore.ieee.org/document/9462983
+39- https://dl.acm.org/doi/10.1145/3133956.3134085
+--------------------------------------------------------------------------------------------
+40- https://dl.acm.org/doi/full/10.1145/3649590
+--------------------------------------------------------------------------------------------
+41- https://dl.acm.org/doi/10.1145/2810103.2813604
+--------------------------------------------------------------------------------------------
+42- https://arxiv.org/abs/2503.17332
+43- https://neurips.cc/virtual/2024/poster/97556
+44- https://ieeexplore.ieee.org/document/10025443
