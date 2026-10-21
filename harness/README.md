@@ -1,10 +1,13 @@
-# web-bugbounty-harness (scaffold)
+# web-bugbounty-harness
 
-A starting skeleton for the **triage "brain"** of an **authorized** web
-bug-bounty testing pipeline. It implements the spine the research design calls
-for — a normalized finding record, an ingest layer, a confidence-gated CWE
-classifier, and a datastore — and leaves the heavier stages as clearly-marked
-stubs with an upgrade path.
+The triage **"brain"** of an **authorized** web bug-bounty testing pipeline:
+ingest findings → classify (CWE) → score (CVSS) → enrich (EPSS/KEV/NVD) →
+prioritize → export to a backbone. Built from the research review in `docs/`.
+
+**v0.2 — now a working brain, not just a skeleton.** Real trainable CWE
+classifier, a correct offline CVSS v3.1 calculator, EPSS/KEV/NVD enrichment,
+transparent prioritization, a temporal-split evaluation harness, and a
+DefectDojo exporter. 18 tests pass.
 
 > ⚠️ **Authorized testing only.** Use this only against targets you have written
 > permission to test, within the program's scope **and** rules of engagement.
@@ -28,42 +31,61 @@ to prototype the ML enrichment, not a reinvention of a vuln-management platform.
 
 ---
 
-## Quickstart (no dependencies)
+## Quickstart
 
 ```bash
-cd web-bugbounty-harness
-python -m unittest discover -s tests        # 8 tests, stdlib only
+cd harness
+python -m unittest discover -s tests        # 18 tests (stdlib; sklearn tests skip if absent)
 
+# --- core pipeline (no installs needed) ---
 python -m harness --db demo.db init
 python -m harness --db demo.db ingest --tool nuclei --file samples/nuclei_sample.jsonl \
     --program acme --in-scope --roe-ok --authorized-by you
-python -m harness --db demo.db classify
-python -m harness --db demo.db list
-python -m harness --db demo.db show --id <id-prefix-shown-by-list>
+python -m harness --db demo.db classify            # keyword baseline (no deps)
+python -m harness --db demo.db score               # CVSS vector -> base score
+python -m harness --db demo.db prioritize --no-kev # fuse CVSS+EPSS+PoC
+python -m harness --db demo.db list --sort priority
+python -m harness --db demo.db export --out dd.json # -> DefectDojo generic import
 ```
 
-Expected: 5 findings ingested; the keyword stub auto-triages the ones it is
-confident about and sends the rest to `needs_review` — exactly what a *baseline*
-should do (it is not a real model; see Stage 5 below).
+```bash
+# --- the real ML brain (needs: pip install -r requirements.txt) ---
+# train a CWE model (the shipped sample is SYNTHETIC — see note), then use it:
+python -m harness train    --data samples/cwe_training_sample.jsonl --model model.pkl
+python -m harness evaluate  --data samples/cwe_training_sample.jsonl   # temporal split
+python -m harness --db demo.db classify --classifier model.pkl
+
+# --- enrichment (needs internet on YOUR machine; keys off CVE ids) ---
+python -m harness --db demo.db enrich --nvd         # EPSS + CISA KEV + NVD
+python -m harness --db demo.db prioritize           # now KEV/EPSS-aware
+```
+
+> ⚠️ **The shipped `samples/cwe_training_sample.jsonl` is SYNTHETIC** (templated)
+> and will score ~100% — it only proves the code runs. Build a real set with
+> `python tools/build_nvd_dataset.py --out nvd_cwe.jsonl` (needs internet), then
+> train/evaluate on that. On real NVD data expect **~70–80% and a visible drop on
+> the temporal split** — that honest gap is the whole point of the eval harness.
 
 ---
 
 ## How it maps to the design stages
 
-| Stage | In this scaffold | Status | Upgrade path |
+| Stage | In this harness | Status | Next upgrade |
 |---|---|---|---|
-| **0. Authorization** | `Authorization` block on every finding; CLI flags; `SCOPE_AND_ROE.md` template | **recorded, not enforced** | Build a scope/ROE engine: match URLs to the allow-list + per-request rate/technique checks |
-| **1. Recon** | — | **gap** | Feed from bbot / amass / httpx / katana (external) |
-| **2. Detect** | — | **gap** | Feed from nuclei / Burp / sqlmap etc. — ingest their output |
-| **3. Validate** | `Exploit` fields (`poc_path`, `poc_verified`) | **fields only** | Non-destructive PoC store; CVE-GENIE-style verified repro (sandbox) |
-| **4. Dedup/cluster** | exact-duplicate collapse (`store.add_deduped`) | **exact only** | Embed + UMAP/HDBSCAN for near-duplicates (design §Group E) |
-| **5. CWE classify** | `KeywordCweClassifier` + confidence gate | **baseline stub** | Swap in Aota BoW+RF, Simonetto two-step, or RoBERTa-125M |
-| **6. CVSS score** | `CvssScore` schema; nuclei pre-seed | **schema only** | Per-metric model (Marchiori/Costa) → official `cvss` equations |
-| **7. Prioritize** | `priority_score` field; `exploit_likelihood` field | **field only** | EPSS + CISA-KEV feeds + FastEmbed-style P(exploit) model |
-| **8. Report** | — | **gap** | Sun templates + GuardLink/VWC-MAP (ATT&CK/CAPEC enrichment) |
+| **0. Authorization** | `Authorization` block + CLI flags + `SCOPE_AND_ROE.md` | **recorded, not enforced** | Build a scope/ROE engine (URL allow-list + rate/technique checks) |
+| **1. Recon** | — | **gap (external)** | Feed from bbot / amass / httpx / katana |
+| **2. Detect** | nuclei + generic ingest adapters | **ingest works** | More adapters (Burp/ZAP/sqlmap); detection itself stays external |
+| **3. Validate** | `Exploit` fields (`poc_path`, `poc_verified`) | **fields + prioritization hook** | Non-destructive PoC store; CVE-GENIE-style verified repro (sandbox) |
+| **4. Dedup/cluster** | exact-duplicate collapse (`store.add_deduped`) | **exact only** | Embed + UMAP/HDBSCAN for near-duplicates |
+| **5. CWE classify** | keyword baseline **+ real TF-IDF/LogReg model** (`train`/`classify --classifier`) + gate | **working** | Simonetto two-step / RoBERTa-125M; multi-label |
+| **6. CVSS score** | **offline v3.1 calculator** (`score`) + NVD vector pull (`enrich --nvd`) | **working (v3.1 base)** | Per-metric text→vector model (Marchiori/Costa); v4.0 |
+| **7. Prioritize** | **EPSS + KEV enrichment + transparent fusion** (`enrich`, `prioritize`) | **working** | Learned finding-level P(exploit) model (train on cvss-bt) |
+| **8. Report** | **DefectDojo generic-import export** (`export`) | **export works** | ATT&CK/CAPEC enrichment (GuardLink/VWC-MAP); Sun templates |
 
-Fully working today: **schema, store, ingest (nuclei + generic), CWE baseline,
-the confidence gate, dedup, CLI, tests.**
+Working today: schema, store, ingest, keyword + trained CWE classifier, the gate,
+CVSS v3.1 scoring, EPSS/KEV/NVD enrichment, transparent prioritization, temporal
+evaluation, DefectDojo export, CLI, 18 tests. Enrichment needs internet; the
+trained classifier needs scikit-learn.
 
 ---
 
@@ -73,19 +95,27 @@ the confidence gate, dedup, CLI, tests.**
 harness/
   schema.py            Finding + CweAssignment/CvssScore/Exploit/Authorization  (the spine)
   store.py             SQLite datastore + exact-duplicate key
-  ingest/
-    base.py            Adapter contract + registry + authorization stamping
-    nuclei.py          nuclei -jsonl  -> Finding   (pre-seeds tool CWE/CVSS)
-    generic.py         config-mapped JSON/JSONL -> Finding
+  ingest/              nuclei + generic adapters (contract + registry)
   classify/
     base.py            CweClassifier interface + apply_gate (Aota C>0.8)
-    keyword_stub.py    baseline keyword matcher  (REPLACE with a real model)
+    keyword_stub.py    zero-dep baseline keyword matcher
+    sklearn_model.py   REAL trainable TF-IDF + LogReg classifier (train/save/load)
     ../data/cwe_keywords.json   web-focused CWE keyword table
+  score/cvss31.py      offline, correct CVSS v3.1 base-score calculator
+  enrich/              EPSS + CISA KEV + NVD clients (cached, fail-soft)
+  prioritize.py        transparent CVSS+EPSS+KEV+PoC fusion (Stage 7)
+  evaluate.py          temporal-split evaluation of the CWE classifier
+  export/defectdojo.py Finding -> DefectDojo generic-import JSON
   cli.py / __main__.py the command line
-tests/                 stdlib unittest
-samples/               example nuclei output
+tools/build_nvd_dataset.py   build a real CVE->CWE training set from NVD
+tests/                 stdlib unittest (18 tests)
+samples/               example nuclei output + synthetic CWE training data
 SCOPE_AND_ROE.md       Stage-0 authorization template
 ```
+
+**Pipeline order:** `ingest → classify → score → enrich → prioritize → export`.
+Each stage reads/writes the one `Finding` record; every ML output is a
+confidence-gated suggestion, never an authority.
 
 **Swap-a-stub rule:** every stub is behind an interface. To use a real CWE model,
 subclass `CweClassifier`, implement `.predict(text) -> [CweAssignment]`, and

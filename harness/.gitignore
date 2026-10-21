@@ -8,6 +8,9 @@ venv/
 build/
 dist/
 .pytest_cache/
+# trained models + enrichment caches are local artifacts
+*.pkl
+.cache/
 # never commit scope/target data or raw scanner output
 targets/
 raw/

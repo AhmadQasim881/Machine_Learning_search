@@ -1,0 +1,360 @@
+{"text": "sql injection in dashboard login via union select extracts the user table", "cwe": "CWE-89", "date": "2022-11-15"}
+{"text": "blind boolean sql injection in dashboard id parameter", "cwe": "CWE-89", "date": "2019-03-15"}
+{"text": "sql injection in payments login via union select extracts the user table", "cwe": "CWE-89", "date": "2020-03-15"}
+{"text": "error-based sql injection in portal report export", "cwe": "CWE-89", "date": "2019-02-15"}
+{"text": "authentication bypass in api-gateway admin panel via crafted cookie", "cwe": "CWE-287", "date": "2020-12-15"}
+{"text": "blind boolean sql injection in acme-shop id parameter", "cwe": "CWE-89", "date": "2020-05-15"}
+{"text": "arbitrary file read in portal template path", "cwe": "CWE-22", "date": "2022-12-15"}
+{"text": "directory traversal in portal allows local file inclusion", "cwe": "CWE-22", "date": "2023-12-15"}
+{"text": "stored xss in mailer comment field executes attacker javascript", "cwe": "CWE-79", "date": "2022-01-15"}
+{"text": "stored xss in payments comment field executes attacker javascript", "cwe": "CWE-79", "date": "2021-09-15"}
+{"text": "authentication bypass in mailer admin panel via crafted cookie", "cwe": "CWE-287", "date": "2020-11-15"}
+{"text": "os command injection in crm ping tool via shell metacharacters", "cwe": "CWE-78", "date": "2023-08-15"}
+{"text": "blind boolean sql injection in dashboard id parameter", "cwe": "CWE-89", "date": "2022-11-15"}
+{"text": "authentication bypass in payments admin panel via crafted cookie", "cwe": "CWE-287", "date": "2024-01-15"}
+{"text": "sql injection in wiki-cms login via union select extracts the user table", "cwe": "CWE-89", "date": "2024-08-15"}
+{"text": "login bypass in portal due to weak authentication check", "cwe": "CWE-287", "date": "2022-02-15"}
+{"text": "arbitrary file read in crm template path", "cwe": "CWE-22", "date": "2023-07-15"}
+{"text": "server-side request forgery in portal webhook url fetches internal metadata endpoint", "cwe": "CWE-918", "date": "2021-06-15"}
+{"text": "blind boolean sql injection in portal id parameter", "cwe": "CWE-89", "date": "2023-02-15"}
+{"text": "arbitrary file read in wiki-cms template path", "cwe": "CWE-22", "date": "2021-02-15"}
+{"text": "error-based sql injection in wiki-cms report export", "cwe": "CWE-89", "date": "2020-05-15"}
+{"text": "dom-based xss in payments search renders unsanitized input", "cwe": "CWE-79", "date": "2021-07-15"}
+{"text": "stored xss in dashboard comment field executes attacker javascript", "cwe": "CWE-79", "date": "2023-06-15"}
+{"text": "server side request forgery in payments pdf generator", "cwe": "CWE-918", "date": "2023-04-15"}
+{"text": "stored xss in mailer comment field executes attacker javascript", "cwe": "CWE-79", "date": "2022-09-15"}
+{"text": "insecure deserialization in payments session cookie leads to remote code execution", "cwe": "CWE-502", "date": "2022-01-15"}
+{"text": "server-side request forgery in dashboard webhook url fetches internal metadata endpoint", "cwe": "CWE-918", "date": "2023-12-15"}
+{"text": "csrf in acme-shop password change due to no csrf token", "cwe": "CWE-352", "date": "2023-01-15"}
+{"text": "cross-site request forgery in wiki-cms account settings missing anti-csrf token", "cwe": "CWE-352", "date": "2022-11-15"}
+{"text": "login bypass in dashboard due to weak authentication check", "cwe": "CWE-287", "date": "2023-11-15"}
+{"text": "directory traversal in wiki-cms allows local file inclusion", "cwe": "CWE-22", "date": "2024-04-15"}
+{"text": "blind boolean sql injection in api-gateway id parameter", "cwe": "CWE-89", "date": "2021-04-15"}
+{"text": "directory traversal in mailer allows local file inclusion", "cwe": "CWE-22", "date": "2020-02-15"}
+{"text": "sql injection in wiki-cms login via union select extracts the user table", "cwe": "CWE-89", "date": "2020-02-15"}
+{"text": "unsafe java deserialization of untrusted data in acme-shop", "cwe": "CWE-502", "date": "2021-11-15"}
+{"text": "reflected cross-site scripting in dashboard via the next parameter allows script injection", "cwe": "CWE-79", "date": "2022-04-15"}
+{"text": "unsafe java deserialization of untrusted data in api-gateway", "cwe": "CWE-502", "date": "2019-06-15"}
+{"text": "os command injection in payments ping tool via shell metacharacters", "cwe": "CWE-78", "date": "2019-03-15"}
+{"text": "login bypass in mailer due to weak authentication check", "cwe": "CWE-287", "date": "2019-12-15"}
+{"text": "dom-based xss in wiki-cms search renders unsanitized input", "cwe": "CWE-79", "date": "2020-08-15"}
+{"text": "reflected cross-site scripting in wiki-cms via the name parameter allows script injection", "cwe": "CWE-79", "date": "2021-06-15"}
+{"text": "arbitrary file read in dashboard template path", "cwe": "CWE-22", "date": "2019-10-15"}
+{"text": "directory traversal in crm allows local file inclusion", "cwe": "CWE-22", "date": "2024-05-15"}
+{"text": "stored xss in portal comment field executes attacker javascript", "cwe": "CWE-79", "date": "2024-07-15"}
+{"text": "server side request forgery in portal pdf generator", "cwe": "CWE-918", "date": "2020-04-15"}
+{"text": "insecure deserialization in crm session cookie leads to remote code execution", "cwe": "CWE-502", "date": "2024-04-15"}
+{"text": "blind boolean sql injection in dashboard id parameter", "cwe": "CWE-89", "date": "2024-02-15"}
+{"text": "path traversal in api-gateway download endpoint reads arbitrary files via ../", "cwe": "CWE-22", "date": "2021-11-15"}
+{"text": "dom-based xss in wiki-cms search renders unsanitized input", "cwe": "CWE-79", "date": "2023-11-15"}
+{"text": "dom-based xss in mailer search renders unsanitized input", "cwe": "CWE-79", "date": "2020-02-15"}
+{"text": "sql injection in mailer login via union select extracts the user table", "cwe": "CWE-89", "date": "2020-05-15"}
+{"text": "dom-based xss in acme-shop search renders unsanitized input", "cwe": "CWE-79", "date": "2024-06-15"}
+{"text": "blind boolean sql injection in mailer id parameter", "cwe": "CWE-89", "date": "2020-12-15"}
+{"text": "csrf in dashboard password change due to no csrf token", "cwe": "CWE-352", "date": "2021-03-15"}
+{"text": "dom-based xss in acme-shop search renders unsanitized input", "cwe": "CWE-79", "date": "2019-02-15"}
+{"text": "reflected cross-site scripting in acme-shop via the name parameter allows script injection", "cwe": "CWE-79", "date": "2024-12-15"}
+{"text": "error-based sql injection in api-gateway report export", "cwe": "CWE-89", "date": "2021-04-15"}
+{"text": "insecure deserialization in acme-shop session cookie leads to remote code execution", "cwe": "CWE-502", "date": "2021-01-15"}
+{"text": "command injection in portal backup feature executes os commands", "cwe": "CWE-78", "date": "2022-02-15"}
+{"text": "blind boolean sql injection in crm id parameter", "cwe": "CWE-89", "date": "2023-11-15"}
+{"text": "unsafe java deserialization of untrusted data in crm", "cwe": "CWE-502", "date": "2019-04-15"}
+{"text": "server side request forgery in acme-shop pdf generator", "cwe": "CWE-918", "date": "2022-11-15"}
+{"text": "ssrf in api-gateway image proxy reaches 169.254.169.254", "cwe": "CWE-918", "date": "2022-09-15"}
+{"text": "directory traversal in wiki-cms allows local file inclusion", "cwe": "CWE-22", "date": "2023-04-15"}
+{"text": "unsafe java deserialization of untrusted data in dashboard", "cwe": "CWE-502", "date": "2021-03-15"}
+{"text": "server side request forgery in payments pdf generator", "cwe": "CWE-918", "date": "2023-08-15"}
+{"text": "insecure deserialization in wiki-cms session cookie leads to remote code execution", "cwe": "CWE-502", "date": "2023-05-15"}
+{"text": "reflected cross-site scripting in dashboard via the q parameter allows script injection", "cwe": "CWE-79", "date": "2024-01-15"}
+{"text": "command injection in wiki-cms backup feature executes os commands", "cwe": "CWE-78", "date": "2024-12-15"}
+{"text": "command injection in portal backup feature executes os commands", "cwe": "CWE-78", "date": "2019-02-15"}
+{"text": "ssrf in payments image proxy reaches 169.254.169.254", "cwe": "CWE-918", "date": "2021-12-15"}
+{"text": "cross-site request forgery in wiki-cms account settings missing anti-csrf token", "cwe": "CWE-352", "date": "2021-01-15"}
+{"text": "error-based sql injection in mailer report export", "cwe": "CWE-89", "date": "2020-06-15"}
+{"text": "dom-based xss in wiki-cms search renders unsanitized input", "cwe": "CWE-79", "date": "2023-07-15"}
+{"text": "insecure deserialization in wiki-cms session cookie leads to remote code execution", "cwe": "CWE-502", "date": "2024-04-15"}
+{"text": "stored xss in portal comment field executes attacker javascript", "cwe": "CWE-79", "date": "2024-11-15"}
+{"text": "command injection in portal backup feature executes os commands", "cwe": "CWE-78", "date": "2020-05-15"}
+{"text": "cross-site request forgery in portal account settings missing anti-csrf token", "cwe": "CWE-352", "date": "2024-07-15"}
+{"text": "blind boolean sql injection in portal id parameter", "cwe": "CWE-89", "date": "2024-04-15"}
+{"text": "unsafe java deserialization of untrusted data in wiki-cms", "cwe": "CWE-502", "date": "2019-08-15"}
+{"text": "arbitrary file read in payments template path", "cwe": "CWE-22", "date": "2019-12-15"}
+{"text": "server side request forgery in mailer pdf generator", "cwe": "CWE-918", "date": "2020-02-15"}
+{"text": "reflected cross-site scripting in dashboard via the q parameter allows script injection", "cwe": "CWE-79", "date": "2022-08-15"}
+{"text": "dom-based xss in mailer search renders unsanitized input", "cwe": "CWE-79", "date": "2024-08-15"}
+{"text": "directory traversal in wiki-cms allows local file inclusion", "cwe": "CWE-22", "date": "2022-12-15"}
+{"text": "command injection in acme-shop backup feature executes os commands", "cwe": "CWE-78", "date": "2021-01-15"}
+{"text": "os command injection in dashboard ping tool via shell metacharacters", "cwe": "CWE-78", "date": "2019-07-15"}
+{"text": "authentication bypass in payments admin panel via crafted cookie", "cwe": "CWE-287", "date": "2024-05-15"}
+{"text": "path traversal in wiki-cms download endpoint reads arbitrary files via ../", "cwe": "CWE-22", "date": "2019-10-15"}
+{"text": "path traversal in payments download endpoint reads arbitrary files via ../", "cwe": "CWE-22", "date": "2020-06-15"}
+{"text": "ssrf in portal image proxy reaches 169.254.169.254", "cwe": "CWE-918", "date": "2019-10-15"}
+{"text": "cross-site request forgery in dashboard account settings missing anti-csrf token", "cwe": "CWE-352", "date": "2022-10-15"}
+{"text": "os command injection in mailer ping tool via shell metacharacters", "cwe": "CWE-78", "date": "2024-06-15"}
+{"text": "insecure deserialization in api-gateway session cookie leads to remote code execution", "cwe": "CWE-502", "date": "2020-10-15"}
+{"text": "server side request forgery in dashboard pdf generator", "cwe": "CWE-918", "date": "2019-02-15"}
+{"text": "blind boolean sql injection in api-gateway id parameter", "cwe": "CWE-89", "date": "2019-10-15"}
+{"text": "login bypass in portal due to weak authentication check", "cwe": "CWE-287", "date": "2024-06-15"}
+{"text": "login bypass in acme-shop due to weak authentication check", "cwe": "CWE-287", "date": "2020-03-15"}
+{"text": "path traversal in dashboard download endpoint reads arbitrary files via ../", "cwe": "CWE-22", "date": "2021-03-15"}
+{"text": "dom-based xss in portal search renders unsanitized input", "cwe": "CWE-79", "date": "2019-11-15"}
+{"text": "csrf in dashboard password change due to no csrf token", "cwe": "CWE-352", "date": "2022-10-15"}
+{"text": "path traversal in crm download endpoint reads arbitrary files via ../", "cwe": "CWE-22", "date": "2023-09-15"}
+{"text": "reflected cross-site scripting in crm via the url parameter allows script injection", "cwe": "CWE-79", "date": "2023-02-15"}
+{"text": "server side request forgery in payments pdf generator", "cwe": "CWE-918", "date": "2024-05-15"}
+{"text": "authentication bypass in api-gateway admin panel via crafted cookie", "cwe": "CWE-287", "date": "2019-04-15"}
+{"text": "authentication bypass in portal admin panel via crafted cookie", "cwe": "CWE-287", "date": "2021-08-15"}
+{"text": "server side request forgery in mailer pdf generator", "cwe": "CWE-918", "date": "2024-03-15"}
+{"text": "dom-based xss in wiki-cms search renders unsanitized input", "cwe": "CWE-79", "date": "2019-07-15"}
+{"text": "error-based sql injection in wiki-cms report export", "cwe": "CWE-89", "date": "2021-08-15"}
+{"text": "path traversal in acme-shop download endpoint reads arbitrary files via ../", "cwe": "CWE-22", "date": "2024-05-15"}
+{"text": "directory traversal in portal allows local file inclusion", "cwe": "CWE-22", "date": "2020-03-15"}
+{"text": "directory traversal in payments allows local file inclusion", "cwe": "CWE-22", "date": "2022-02-15"}
+{"text": "cross-site request forgery in portal account settings missing anti-csrf token", "cwe": "CWE-352", "date": "2023-05-15"}
+{"text": "command injection in dashboard backup feature executes os commands", "cwe": "CWE-78", "date": "2022-08-15"}
+{"text": "csrf in portal password change due to no csrf token", "cwe": "CWE-352", "date": "2021-03-15"}
+{"text": "directory traversal in mailer allows local file inclusion", "cwe": "CWE-22", "date": "2023-10-15"}
+{"text": "ssrf in payments image proxy reaches 169.254.169.254", "cwe": "CWE-918", "date": "2020-12-15"}
+{"text": "sql injection in crm login via union select extracts the user table", "cwe": "CWE-89", "date": "2024-01-15"}
+{"text": "directory traversal in api-gateway allows local file inclusion", "cwe": "CWE-22", "date": "2021-02-15"}
+{"text": "server side request forgery in mailer pdf generator", "cwe": "CWE-918", "date": "2020-12-15"}
+{"text": "stored xss in dashboard comment field executes attacker javascript", "cwe": "CWE-79", "date": "2020-10-15"}
+{"text": "stored xss in crm comment field executes attacker javascript", "cwe": "CWE-79", "date": "2020-11-15"}
+{"text": "cross-site request forgery in acme-shop account settings missing anti-csrf token", "cwe": "CWE-352", "date": "2024-01-15"}
+{"text": "sql injection in portal login via union select extracts the user table", "cwe": "CWE-89", "date": "2021-05-15"}
+{"text": "stored xss in wiki-cms comment field executes attacker javascript", "cwe": "CWE-79", "date": "2023-07-15"}
+{"text": "login bypass in portal due to weak authentication check", "cwe": "CWE-287", "date": "2021-12-15"}
+{"text": "login bypass in crm due to weak authentication check", "cwe": "CWE-287", "date": "2021-05-15"}
+{"text": "command injection in api-gateway backup feature executes os commands", "cwe": "CWE-78", "date": "2021-06-15"}
+{"text": "blind boolean sql injection in acme-shop id parameter", "cwe": "CWE-89", "date": "2022-01-15"}
+{"text": "server-side request forgery in crm webhook url fetches internal metadata endpoint", "cwe": "CWE-918", "date": "2022-12-15"}
+{"text": "server-side request forgery in api-gateway webhook url fetches internal metadata endpoint", "cwe": "CWE-918", "date": "2022-12-15"}
+{"text": "authentication bypass in portal admin panel via crafted cookie", "cwe": "CWE-287", "date": "2021-02-15"}
+{"text": "command injection in portal backup feature executes os commands", "cwe": "CWE-78", "date": "2023-03-15"}
+{"text": "cross-site request forgery in portal account settings missing anti-csrf token", "cwe": "CWE-352", "date": "2022-10-15"}
+{"text": "directory traversal in crm allows local file inclusion", "cwe": "CWE-22", "date": "2024-01-15"}
+{"text": "login bypass in portal due to weak authentication check", "cwe": "CWE-287", "date": "2021-06-15"}
+{"text": "reflected cross-site scripting in acme-shop via the q parameter allows script injection", "cwe": "CWE-79", "date": "2020-01-15"}
+{"text": "stored xss in crm comment field executes attacker javascript", "cwe": "CWE-79", "date": "2024-05-15"}
+{"text": "os command injection in wiki-cms ping tool via shell metacharacters", "cwe": "CWE-78", "date": "2022-04-15"}
+{"text": "reflected cross-site scripting in mailer via the id parameter allows script injection", "cwe": "CWE-79", "date": "2019-07-15"}
+{"text": "csrf in portal password change due to no csrf token", "cwe": "CWE-352", "date": "2023-07-15"}
+{"text": "command injection in dashboard backup feature executes os commands", "cwe": "CWE-78", "date": "2019-07-15"}
+{"text": "login bypass in api-gateway due to weak authentication check", "cwe": "CWE-287", "date": "2020-09-15"}
+{"text": "server-side request forgery in crm webhook url fetches internal metadata endpoint", "cwe": "CWE-918", "date": "2024-12-15"}
+{"text": "insecure deserialization in acme-shop session cookie leads to remote code execution", "cwe": "CWE-502", "date": "2020-03-15"}
+{"text": "insecure deserialization in dashboard session cookie leads to remote code execution", "cwe": "CWE-502", "date": "2022-12-15"}
+{"text": "server-side request forgery in crm webhook url fetches internal metadata endpoint", "cwe": "CWE-918", "date": "2024-04-15"}
+{"text": "login bypass in wiki-cms due to weak authentication check", "cwe": "CWE-287", "date": "2022-12-15"}
+{"text": "dom-based xss in api-gateway search renders unsanitized input", "cwe": "CWE-79", "date": "2022-06-15"}
+{"text": "directory traversal in wiki-cms allows local file inclusion", "cwe": "CWE-22", "date": "2021-01-15"}
+{"text": "command injection in portal backup feature executes os commands", "cwe": "CWE-78", "date": "2020-06-15"}
+{"text": "path traversal in payments download endpoint reads arbitrary files via ../", "cwe": "CWE-22", "date": "2024-02-15"}
+{"text": "server-side request forgery in wiki-cms webhook url fetches internal metadata endpoint", "cwe": "CWE-918", "date": "2021-06-15"}
+{"text": "insecure deserialization in wiki-cms session cookie leads to remote code execution", "cwe": "CWE-502", "date": "2020-01-15"}
+{"text": "arbitrary file read in dashboard template path", "cwe": "CWE-22", "date": "2021-11-15"}
+{"text": "unsafe java deserialization of untrusted data in api-gateway", "cwe": "CWE-502", "date": "2022-06-15"}
+{"text": "directory traversal in mailer allows local file inclusion", "cwe": "CWE-22", "date": "2019-08-15"}
+{"text": "ssrf in acme-shop image proxy reaches 169.254.169.254", "cwe": "CWE-918", "date": "2020-05-15"}
+{"text": "sql injection in acme-shop login via union select extracts the user table", "cwe": "CWE-89", "date": "2019-10-15"}
+{"text": "csrf in payments password change due to no csrf token", "cwe": "CWE-352", "date": "2024-01-15"}
+{"text": "authentication bypass in crm admin panel via crafted cookie", "cwe": "CWE-287", "date": "2021-08-15"}
+{"text": "insecure deserialization in crm session cookie leads to remote code execution", "cwe": "CWE-502", "date": "2024-11-15"}
+{"text": "stored xss in wiki-cms comment field executes attacker javascript", "cwe": "CWE-79", "date": "2020-10-15"}
+{"text": "reflected cross-site scripting in portal via the next parameter allows script injection", "cwe": "CWE-79", "date": "2024-04-15"}
+{"text": "directory traversal in payments allows local file inclusion", "cwe": "CWE-22", "date": "2019-02-15"}
+{"text": "sql injection in portal login via union select extracts the user table", "cwe": "CWE-89", "date": "2023-07-15"}
+{"text": "server-side request forgery in payments webhook url fetches internal metadata endpoint", "cwe": "CWE-918", "date": "2022-05-15"}
+{"text": "login bypass in dashboard due to weak authentication check", "cwe": "CWE-287", "date": "2022-03-15"}
+{"text": "blind boolean sql injection in wiki-cms id parameter", "cwe": "CWE-89", "date": "2021-12-15"}
+{"text": "os command injection in api-gateway ping tool via shell metacharacters", "cwe": "CWE-78", "date": "2020-01-15"}
+{"text": "sql injection in crm login via union select extracts the user table", "cwe": "CWE-89", "date": "2019-04-15"}
+{"text": "insecure deserialization in crm session cookie leads to remote code execution", "cwe": "CWE-502", "date": "2019-07-15"}
+{"text": "server side request forgery in crm pdf generator", "cwe": "CWE-918", "date": "2024-06-15"}
+{"text": "ssrf in crm image proxy reaches 169.254.169.254", "cwe": "CWE-918", "date": "2023-03-15"}
+{"text": "reflected cross-site scripting in payments via the next parameter allows script injection", "cwe": "CWE-79", "date": "2021-01-15"}
+{"text": "error-based sql injection in portal report export", "cwe": "CWE-89", "date": "2022-10-15"}
+{"text": "error-based sql injection in dashboard report export", "cwe": "CWE-89", "date": "2023-01-15"}
+{"text": "login bypass in payments due to weak authentication check", "cwe": "CWE-287", "date": "2024-10-15"}
+{"text": "stored xss in payments comment field executes attacker javascript", "cwe": "CWE-79", "date": "2022-05-15"}
+{"text": "insecure deserialization in crm session cookie leads to remote code execution", "cwe": "CWE-502", "date": "2019-08-15"}
+{"text": "os command injection in dashboard ping tool via shell metacharacters", "cwe": "CWE-78", "date": "2021-04-15"}
+{"text": "ssrf in dashboard image proxy reaches 169.254.169.254", "cwe": "CWE-918", "date": "2023-11-15"}
+{"text": "insecure deserialization in wiki-cms session cookie leads to remote code execution", "cwe": "CWE-502", "date": "2021-12-15"}
+{"text": "cross-site request forgery in dashboard account settings missing anti-csrf token", "cwe": "CWE-352", "date": "2021-03-15"}
+{"text": "reflected cross-site scripting in api-gateway via the id parameter allows script injection", "cwe": "CWE-79", "date": "2022-05-15"}
+{"text": "error-based sql injection in payments report export", "cwe": "CWE-89", "date": "2023-03-15"}
+{"text": "unsafe java deserialization of untrusted data in portal", "cwe": "CWE-502", "date": "2023-09-15"}
+{"text": "os command injection in portal ping tool via shell metacharacters", "cwe": "CWE-78", "date": "2021-11-15"}
+{"text": "arbitrary file read in portal template path", "cwe": "CWE-22", "date": "2021-05-15"}
+{"text": "csrf in api-gateway password change due to no csrf token", "cwe": "CWE-352", "date": "2022-05-15"}
+{"text": "server-side request forgery in portal webhook url fetches internal metadata endpoint", "cwe": "CWE-918", "date": "2020-09-15"}
+{"text": "stored xss in portal comment field executes attacker javascript", "cwe": "CWE-79", "date": "2021-05-15"}
+{"text": "sql injection in acme-shop login via union select extracts the user table", "cwe": "CWE-89", "date": "2019-03-15"}
+{"text": "path traversal in portal download endpoint reads arbitrary files via ../", "cwe": "CWE-22", "date": "2023-02-15"}
+{"text": "error-based sql injection in portal report export", "cwe": "CWE-89", "date": "2020-09-15"}
+{"text": "reflected cross-site scripting in mailer via the q parameter allows script injection", "cwe": "CWE-79", "date": "2023-06-15"}
+{"text": "blind boolean sql injection in wiki-cms id parameter", "cwe": "CWE-89", "date": "2022-07-15"}
+{"text": "unsafe java deserialization of untrusted data in wiki-cms", "cwe": "CWE-502", "date": "2024-05-15"}
+{"text": "cross-site request forgery in api-gateway account settings missing anti-csrf token", "cwe": "CWE-352", "date": "2020-08-15"}
+{"text": "path traversal in payments download endpoint reads arbitrary files via ../", "cwe": "CWE-22", "date": "2019-01-15"}
+{"text": "error-based sql injection in portal report export", "cwe": "CWE-89", "date": "2019-11-15"}
+{"text": "path traversal in acme-shop download endpoint reads arbitrary files via ../", "cwe": "CWE-22", "date": "2022-09-15"}
+{"text": "login bypass in crm due to weak authentication check", "cwe": "CWE-287", "date": "2023-02-15"}
+{"text": "os command injection in acme-shop ping tool via shell metacharacters", "cwe": "CWE-78", "date": "2022-05-15"}
+{"text": "command injection in payments backup feature executes os commands", "cwe": "CWE-78", "date": "2023-02-15"}
+{"text": "path traversal in acme-shop download endpoint reads arbitrary files via ../", "cwe": "CWE-22", "date": "2020-11-15"}
+{"text": "cross-site request forgery in acme-shop account settings missing anti-csrf token", "cwe": "CWE-352", "date": "2019-06-15"}
+{"text": "unsafe java deserialization of untrusted data in mailer", "cwe": "CWE-502", "date": "2024-07-15"}
+{"text": "sql injection in mailer login via union select extracts the user table", "cwe": "CWE-89", "date": "2021-11-15"}
+{"text": "command injection in wiki-cms backup feature executes os commands", "cwe": "CWE-78", "date": "2023-12-15"}
+{"text": "os command injection in mailer ping tool via shell metacharacters", "cwe": "CWE-78", "date": "2024-05-15"}
+{"text": "arbitrary file read in portal template path", "cwe": "CWE-22", "date": "2023-05-15"}
+{"text": "server side request forgery in wiki-cms pdf generator", "cwe": "CWE-918", "date": "2021-05-15"}
+{"text": "os command injection in crm ping tool via shell metacharacters", "cwe": "CWE-78", "date": "2023-08-15"}
+{"text": "arbitrary file read in payments template path", "cwe": "CWE-22", "date": "2024-06-15"}
+{"text": "server side request forgery in payments pdf generator", "cwe": "CWE-918", "date": "2022-01-15"}
+{"text": "reflected cross-site scripting in mailer via the name parameter allows script injection", "cwe": "CWE-79", "date": "2023-02-15"}
+{"text": "cross-site request forgery in crm account settings missing anti-csrf token", "cwe": "CWE-352", "date": "2019-06-15"}
+{"text": "ssrf in acme-shop image proxy reaches 169.254.169.254", "cwe": "CWE-918", "date": "2021-09-15"}
+{"text": "blind boolean sql injection in wiki-cms id parameter", "cwe": "CWE-89", "date": "2019-05-15"}
+{"text": "login bypass in dashboard due to weak authentication check", "cwe": "CWE-287", "date": "2023-11-15"}
+{"text": "ssrf in payments image proxy reaches 169.254.169.254", "cwe": "CWE-918", "date": "2024-06-15"}
+{"text": "csrf in portal password change due to no csrf token", "cwe": "CWE-352", "date": "2019-07-15"}
+{"text": "error-based sql injection in crm report export", "cwe": "CWE-89", "date": "2022-12-15"}
+{"text": "unsafe java deserialization of untrusted data in mailer", "cwe": "CWE-502", "date": "2020-09-15"}
+{"text": "sql injection in dashboard login via union select extracts the user table", "cwe": "CWE-89", "date": "2024-09-15"}
+{"text": "sql injection in mailer login via union select extracts the user table", "cwe": "CWE-89", "date": "2023-06-15"}
+{"text": "path traversal in acme-shop download endpoint reads arbitrary files via ../", "cwe": "CWE-22", "date": "2021-05-15"}
+{"text": "unsafe java deserialization of untrusted data in payments", "cwe": "CWE-502", "date": "2022-05-15"}
+{"text": "ssrf in mailer image proxy reaches 169.254.169.254", "cwe": "CWE-918", "date": "2019-08-15"}
+{"text": "directory traversal in wiki-cms allows local file inclusion", "cwe": "CWE-22", "date": "2022-09-15"}
+{"text": "path traversal in mailer download endpoint reads arbitrary files via ../", "cwe": "CWE-22", "date": "2019-12-15"}
+{"text": "authentication bypass in dashboard admin panel via crafted cookie", "cwe": "CWE-287", "date": "2020-07-15"}
+{"text": "csrf in dashboard password change due to no csrf token", "cwe": "CWE-352", "date": "2019-12-15"}
+{"text": "authentication bypass in payments admin panel via crafted cookie", "cwe": "CWE-287", "date": "2022-07-15"}
+{"text": "authentication bypass in acme-shop admin panel via crafted cookie", "cwe": "CWE-287", "date": "2023-03-15"}
+{"text": "reflected cross-site scripting in acme-shop via the q parameter allows script injection", "cwe": "CWE-79", "date": "2019-09-15"}
+{"text": "blind boolean sql injection in portal id parameter", "cwe": "CWE-89", "date": "2024-04-15"}
+{"text": "os command injection in wiki-cms ping tool via shell metacharacters", "cwe": "CWE-78", "date": "2020-12-15"}
+{"text": "dom-based xss in dashboard search renders unsanitized input", "cwe": "CWE-79", "date": "2022-06-15"}
+{"text": "csrf in payments password change due to no csrf token", "cwe": "CWE-352", "date": "2020-06-15"}
+{"text": "authentication bypass in api-gateway admin panel via crafted cookie", "cwe": "CWE-287", "date": "2019-05-15"}
+{"text": "os command injection in dashboard ping tool via shell metacharacters", "cwe": "CWE-78", "date": "2021-09-15"}
+{"text": "arbitrary file read in crm template path", "cwe": "CWE-22", "date": "2020-06-15"}
+{"text": "server side request forgery in mailer pdf generator", "cwe": "CWE-918", "date": "2022-07-15"}
+{"text": "error-based sql injection in api-gateway report export", "cwe": "CWE-89", "date": "2022-12-15"}
+{"text": "csrf in api-gateway password change due to no csrf token", "cwe": "CWE-352", "date": "2022-08-15"}
+{"text": "stored xss in acme-shop comment field executes attacker javascript", "cwe": "CWE-79", "date": "2019-07-15"}
+{"text": "sql injection in dashboard login via union select extracts the user table", "cwe": "CWE-89", "date": "2023-03-15"}
+{"text": "unsafe java deserialization of untrusted data in acme-shop", "cwe": "CWE-502", "date": "2024-09-15"}
+{"text": "insecure deserialization in portal session cookie leads to remote code execution", "cwe": "CWE-502", "date": "2023-05-15"}
+{"text": "command injection in payments backup feature executes os commands", "cwe": "CWE-78", "date": "2022-09-15"}
+{"text": "server-side request forgery in api-gateway webhook url fetches internal metadata endpoint", "cwe": "CWE-918", "date": "2023-08-15"}
+{"text": "cross-site request forgery in dashboard account settings missing anti-csrf token", "cwe": "CWE-352", "date": "2023-06-15"}
+{"text": "server side request forgery in api-gateway pdf generator", "cwe": "CWE-918", "date": "2023-04-15"}
+{"text": "server side request forgery in api-gateway pdf generator", "cwe": "CWE-918", "date": "2019-03-15"}
+{"text": "authentication bypass in crm admin panel via crafted cookie", "cwe": "CWE-287", "date": "2024-03-15"}
+{"text": "cross-site request forgery in mailer account settings missing anti-csrf token", "cwe": "CWE-352", "date": "2021-07-15"}
+{"text": "server side request forgery in wiki-cms pdf generator", "cwe": "CWE-918", "date": "2021-02-15"}
+{"text": "cross-site request forgery in api-gateway account settings missing anti-csrf token", "cwe": "CWE-352", "date": "2023-09-15"}
+{"text": "server-side request forgery in crm webhook url fetches internal metadata endpoint", "cwe": "CWE-918", "date": "2021-07-15"}
+{"text": "ssrf in portal image proxy reaches 169.254.169.254", "cwe": "CWE-918", "date": "2022-01-15"}
+{"text": "ssrf in payments image proxy reaches 169.254.169.254", "cwe": "CWE-918", "date": "2020-04-15"}
+{"text": "command injection in mailer backup feature executes os commands", "cwe": "CWE-78", "date": "2019-07-15"}
+{"text": "server-side request forgery in portal webhook url fetches internal metadata endpoint", "cwe": "CWE-918", "date": "2020-07-15"}
+{"text": "ssrf in acme-shop image proxy reaches 169.254.169.254", "cwe": "CWE-918", "date": "2024-07-15"}
+{"text": "error-based sql injection in payments report export", "cwe": "CWE-89", "date": "2024-03-15"}
+{"text": "path traversal in portal download endpoint reads arbitrary files via ../", "cwe": "CWE-22", "date": "2022-05-15"}
+{"text": "directory traversal in dashboard allows local file inclusion", "cwe": "CWE-22", "date": "2019-12-15"}
+{"text": "dom-based xss in dashboard search renders unsanitized input", "cwe": "CWE-79", "date": "2023-05-15"}
+{"text": "blind boolean sql injection in crm id parameter", "cwe": "CWE-89", "date": "2023-09-15"}
+{"text": "error-based sql injection in wiki-cms report export", "cwe": "CWE-89", "date": "2019-01-15"}
+{"text": "csrf in payments password change due to no csrf token", "cwe": "CWE-352", "date": "2023-05-15"}
+{"text": "csrf in payments password change due to no csrf token", "cwe": "CWE-352", "date": "2019-04-15"}
+{"text": "csrf in acme-shop password change due to no csrf token", "cwe": "CWE-352", "date": "2021-12-15"}
+{"text": "arbitrary file read in wiki-cms template path", "cwe": "CWE-22", "date": "2020-07-15"}
+{"text": "unsafe java deserialization of untrusted data in acme-shop", "cwe": "CWE-502", "date": "2023-05-15"}
+{"text": "path traversal in acme-shop download endpoint reads arbitrary files via ../", "cwe": "CWE-22", "date": "2022-02-15"}
+{"text": "ssrf in wiki-cms image proxy reaches 169.254.169.254", "cwe": "CWE-918", "date": "2024-03-15"}
+{"text": "stored xss in crm comment field executes attacker javascript", "cwe": "CWE-79", "date": "2019-04-15"}
+{"text": "os command injection in payments ping tool via shell metacharacters", "cwe": "CWE-78", "date": "2023-02-15"}
+{"text": "authentication bypass in payments admin panel via crafted cookie", "cwe": "CWE-287", "date": "2023-09-15"}
+{"text": "arbitrary file read in mailer template path", "cwe": "CWE-22", "date": "2024-08-15"}
+{"text": "os command injection in api-gateway ping tool via shell metacharacters", "cwe": "CWE-78", "date": "2020-04-15"}
+{"text": "ssrf in dashboard image proxy reaches 169.254.169.254", "cwe": "CWE-918", "date": "2019-08-15"}
+{"text": "blind boolean sql injection in acme-shop id parameter", "cwe": "CWE-89", "date": "2020-09-15"}
+{"text": "insecure deserialization in api-gateway session cookie leads to remote code execution", "cwe": "CWE-502", "date": "2021-06-15"}
+{"text": "dom-based xss in crm search renders unsanitized input", "cwe": "CWE-79", "date": "2022-08-15"}
+{"text": "server-side request forgery in payments webhook url fetches internal metadata endpoint", "cwe": "CWE-918", "date": "2019-05-15"}
+{"text": "login bypass in crm due to weak authentication check", "cwe": "CWE-287", "date": "2020-03-15"}
+{"text": "unsafe java deserialization of untrusted data in crm", "cwe": "CWE-502", "date": "2021-11-15"}
+{"text": "insecure deserialization in acme-shop session cookie leads to remote code execution", "cwe": "CWE-502", "date": "2019-11-15"}
+{"text": "stored xss in acme-shop comment field executes attacker javascript", "cwe": "CWE-79", "date": "2019-04-15"}
+{"text": "arbitrary file read in payments template path", "cwe": "CWE-22", "date": "2024-06-15"}
+{"text": "dom-based xss in crm search renders unsanitized input", "cwe": "CWE-79", "date": "2024-11-15"}
+{"text": "directory traversal in wiki-cms allows local file inclusion", "cwe": "CWE-22", "date": "2020-12-15"}
+{"text": "ssrf in portal image proxy reaches 169.254.169.254", "cwe": "CWE-918", "date": "2023-08-15"}
+{"text": "cross-site request forgery in acme-shop account settings missing anti-csrf token", "cwe": "CWE-352", "date": "2024-07-15"}
+{"text": "cross-site request forgery in api-gateway account settings missing anti-csrf token", "cwe": "CWE-352", "date": "2019-02-15"}
+{"text": "csrf in api-gateway password change due to no csrf token", "cwe": "CWE-352", "date": "2020-10-15"}
+{"text": "unsafe java deserialization of untrusted data in payments", "cwe": "CWE-502", "date": "2023-06-15"}
+{"text": "cross-site request forgery in api-gateway account settings missing anti-csrf token", "cwe": "CWE-352", "date": "2020-01-15"}
+{"text": "server side request forgery in wiki-cms pdf generator", "cwe": "CWE-918", "date": "2019-07-15"}
+{"text": "reflected cross-site scripting in api-gateway via the next parameter allows script injection", "cwe": "CWE-79", "date": "2020-02-15"}
+{"text": "login bypass in dashboard due to weak authentication check", "cwe": "CWE-287", "date": "2024-03-15"}
+{"text": "os command injection in acme-shop ping tool via shell metacharacters", "cwe": "CWE-78", "date": "2024-12-15"}
+{"text": "server-side request forgery in portal webhook url fetches internal metadata endpoint", "cwe": "CWE-918", "date": "2019-12-15"}
+{"text": "sql injection in acme-shop login via union select extracts the user table", "cwe": "CWE-89", "date": "2022-05-15"}
+{"text": "authentication bypass in payments admin panel via crafted cookie", "cwe": "CWE-287", "date": "2022-09-15"}
+{"text": "error-based sql injection in portal report export", "cwe": "CWE-89", "date": "2024-07-15"}
+{"text": "stored xss in portal comment field executes attacker javascript", "cwe": "CWE-79", "date": "2023-01-15"}
+{"text": "reflected cross-site scripting in wiki-cms via the url parameter allows script injection", "cwe": "CWE-79", "date": "2019-10-15"}
+{"text": "login bypass in mailer due to weak authentication check", "cwe": "CWE-287", "date": "2019-10-15"}
+{"text": "server-side request forgery in crm webhook url fetches internal metadata endpoint", "cwe": "CWE-918", "date": "2019-08-15"}
+{"text": "unsafe java deserialization of untrusted data in api-gateway", "cwe": "CWE-502", "date": "2022-08-15"}
+{"text": "login bypass in acme-shop due to weak authentication check", "cwe": "CWE-287", "date": "2019-07-15"}
+{"text": "unsafe java deserialization of untrusted data in payments", "cwe": "CWE-502", "date": "2020-09-15"}
+{"text": "path traversal in api-gateway download endpoint reads arbitrary files via ../", "cwe": "CWE-22", "date": "2023-09-15"}
+{"text": "server-side request forgery in crm webhook url fetches internal metadata endpoint", "cwe": "CWE-918", "date": "2023-05-15"}
+{"text": "path traversal in wiki-cms download endpoint reads arbitrary files via ../", "cwe": "CWE-22", "date": "2024-07-15"}
+{"text": "dom-based xss in wiki-cms search renders unsanitized input", "cwe": "CWE-79", "date": "2021-08-15"}
+{"text": "ssrf in acme-shop image proxy reaches 169.254.169.254", "cwe": "CWE-918", "date": "2022-10-15"}
+{"text": "arbitrary file read in wiki-cms template path", "cwe": "CWE-22", "date": "2019-12-15"}
+{"text": "command injection in acme-shop backup feature executes os commands", "cwe": "CWE-78", "date": "2021-12-15"}
+{"text": "cross-site request forgery in wiki-cms account settings missing anti-csrf token", "cwe": "CWE-352", "date": "2020-03-15"}
+{"text": "insecure deserialization in portal session cookie leads to remote code execution", "cwe": "CWE-502", "date": "2023-01-15"}
+{"text": "server side request forgery in dashboard pdf generator", "cwe": "CWE-918", "date": "2021-02-15"}
+{"text": "server-side request forgery in mailer webhook url fetches internal metadata endpoint", "cwe": "CWE-918", "date": "2020-04-15"}
+{"text": "command injection in wiki-cms backup feature executes os commands", "cwe": "CWE-78", "date": "2024-04-15"}
+{"text": "stored xss in payments comment field executes attacker javascript", "cwe": "CWE-79", "date": "2021-04-15"}
+{"text": "arbitrary file read in payments template path", "cwe": "CWE-22", "date": "2020-12-15"}
+{"text": "dom-based xss in dashboard search renders unsanitized input", "cwe": "CWE-79", "date": "2021-04-15"}
+{"text": "os command injection in payments ping tool via shell metacharacters", "cwe": "CWE-78", "date": "2022-12-15"}
+{"text": "csrf in api-gateway password change due to no csrf token", "cwe": "CWE-352", "date": "2020-09-15"}
+{"text": "blind boolean sql injection in mailer id parameter", "cwe": "CWE-89", "date": "2021-05-15"}
+{"text": "sql injection in portal login via union select extracts the user table", "cwe": "CWE-89", "date": "2021-02-15"}
+{"text": "sql injection in portal login via union select extracts the user table", "cwe": "CWE-89", "date": "2022-09-15"}
+{"text": "error-based sql injection in api-gateway report export", "cwe": "CWE-89", "date": "2021-07-15"}
+{"text": "authentication bypass in portal admin panel via crafted cookie", "cwe": "CWE-287", "date": "2023-01-15"}
+{"text": "ssrf in acme-shop image proxy reaches 169.254.169.254", "cwe": "CWE-918", "date": "2021-06-15"}
+{"text": "csrf in wiki-cms password change due to no csrf token", "cwe": "CWE-352", "date": "2024-06-15"}
+{"text": "directory traversal in payments allows local file inclusion", "cwe": "CWE-22", "date": "2021-06-15"}
+{"text": "reflected cross-site scripting in mailer via the next parameter allows script injection", "cwe": "CWE-79", "date": "2020-01-15"}
+{"text": "csrf in dashboard password change due to no csrf token", "cwe": "CWE-352", "date": "2024-12-15"}
+{"text": "arbitrary file read in mailer template path", "cwe": "CWE-22", "date": "2023-08-15"}
+{"text": "reflected cross-site scripting in dashboard via the q parameter allows script injection", "cwe": "CWE-79", "date": "2021-02-15"}
+{"text": "command injection in acme-shop backup feature executes os commands", "cwe": "CWE-78", "date": "2024-10-15"}
+{"text": "error-based sql injection in acme-shop report export", "cwe": "CWE-89", "date": "2024-03-15"}
+{"text": "insecure deserialization in mailer session cookie leads to remote code execution", "cwe": "CWE-502", "date": "2022-08-15"}
+{"text": "arbitrary file read in dashboard template path", "cwe": "CWE-22", "date": "2022-12-15"}
+{"text": "dom-based xss in payments search renders unsanitized input", "cwe": "CWE-79", "date": "2020-05-15"}
+{"text": "unsafe java deserialization of untrusted data in acme-shop", "cwe": "CWE-502", "date": "2020-04-15"}
+{"text": "path traversal in portal download endpoint reads arbitrary files via ../", "cwe": "CWE-22", "date": "2020-10-15"}
+{"text": "authentication bypass in payments admin panel via crafted cookie", "cwe": "CWE-287", "date": "2022-05-15"}
+{"text": "error-based sql injection in acme-shop report export", "cwe": "CWE-89", "date": "2023-07-15"}
+{"text": "arbitrary file read in payments template path", "cwe": "CWE-22", "date": "2022-07-15"}
+{"text": "authentication bypass in portal admin panel via crafted cookie", "cwe": "CWE-287", "date": "2019-08-15"}
+{"text": "command injection in portal backup feature executes os commands", "cwe": "CWE-78", "date": "2020-09-15"}
+{"text": "os command injection in payments ping tool via shell metacharacters", "cwe": "CWE-78", "date": "2019-09-15"}
+{"text": "server-side request forgery in acme-shop webhook url fetches internal metadata endpoint", "cwe": "CWE-918", "date": "2024-03-15"}

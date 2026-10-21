@@ -1,24 +1,32 @@
 """
-harness.cli — a thin command line over the scaffold.
+harness.cli — the command line over the harness.
 
-    python -m harness init         --db harness.db
-    python -m harness ingest       --tool nuclei --file out.jsonl --program acme --in-scope --roe-ok
-    python -m harness classify     --db harness.db
-    python -m harness list         --db harness.db [--status needs_review]
-    python -m harness show         --db harness.db --id <finding-id>
+    python -m harness init        --db harness.db
+    python -m harness ingest      --tool nuclei --file out.jsonl --program acme --in-scope --roe-ok
+    python -m harness classify    --db harness.db [--classifier model.pkl]
+    python -m harness score       --db harness.db            # CVSS vector -> base score
+    python -m harness enrich      --db harness.db [--no-epss] [--no-kev] [--nvd]
+    python -m harness prioritize  --db harness.db            # fuse CVSS+EPSS+KEV+PoC
+    python -m harness list        --db harness.db [--status needs_review] [--sort priority]
+    python -m harness show        --db harness.db --id <id>
+    python -m harness export      --db harness.db --out findings_dd.json   # DefectDojo
+    python -m harness train       --data cwe.jsonl --model model.pkl
+    python -m harness evaluate    --data cwe.jsonl [--train-frac 0.8]
     python -m harness adapters
 
 Stdlib argparse only. The CLI wires the stages together; the real work lives in
-the modules so it stays swappable.
+the modules so it stays swappable. ML/enrichment commands need their optional
+deps (scikit-learn / requests) — they print a clear message if missing.
 """
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 
-from .classify import apply_gate, default_classifier
+from .classify import apply_gate, load_classifier
 from .ingest import apply_authorization, available_adapters, get_adapter
-from .schema import Authorization, Status
+from .schema import Authorization, CvssScore, ConfidenceSource, Status
 from .store import Store
 
 
@@ -39,45 +47,153 @@ def _cmd_adapters(args) -> int:
 def _cmd_ingest(args) -> int:
     adapter = get_adapter(args.tool)
     findings = adapter.parse_file(args.file)
-    auth = Authorization(
-        program=args.program or "",
-        in_scope=bool(args.in_scope),
-        roe_ok=bool(args.roe_ok),
-        authorized_by=args.authorized_by or "",
-    )
+    auth = Authorization(program=args.program or "", in_scope=bool(args.in_scope),
+                         roe_ok=bool(args.roe_ok), authorized_by=args.authorized_by or "")
     apply_authorization(findings, auth)
-
-    new, dup = 0, 0
+    new = dup = 0
     with Store(args.db) as store:
         for f in findings:
             _, is_new = store.add_deduped(f)
             new += int(is_new)
             dup += int(not is_new)
-    print(f"[+] ingested {len(findings)} record(s) via '{args.tool}': "
-          f"{new} new, {dup} exact-duplicate")
+    print(f"[+] ingested {len(findings)} record(s) via '{args.tool}': {new} new, {dup} exact-duplicate")
     if findings and not (args.in_scope and args.roe_ok):
-        print("[!] authorization NOT fully set (in-scope/ROE). These findings "
-              "are recorded but marked not-actionable until you confirm scope "
-              "and rules of engagement.", file=sys.stderr)
+        print("[!] authorization NOT fully set (in-scope/ROE) — findings recorded "
+              "but not-actionable until you confirm scope and rules of engagement.",
+              file=sys.stderr)
     return 0
 
 
 def _cmd_classify(args) -> int:
-    clf = default_classifier()
-    gate = args.gate
+    try:
+        clf = load_classifier(args.classifier)
+    except Exception as e:  # noqa: BLE001
+        print(f"[-] could not load classifier: {e}", file=sys.stderr)
+        return 1
     triaged = reviewed = 0
     with Store(args.db) as store:
         todo = list(store.iter_findings(status=Status.NEW))
         for f in todo:
             clf.classify(f)
-            apply_gate(f, threshold=gate)
+            apply_gate(f, threshold=args.gate)
             store.upsert(f)
-            if f.status == Status.TRIAGED:
-                triaged += 1
-            elif f.status == Status.NEEDS_REVIEW:
-                reviewed += 1
+            triaged += int(f.status == Status.TRIAGED)
+            reviewed += int(f.status == Status.NEEDS_REVIEW)
     print(f"[+] classified {len(todo)} new finding(s) with '{clf.name}' "
-          f"(gate={gate}): {triaged} auto-triaged, {reviewed} -> needs_review")
+          f"(gate={args.gate}): {triaged} auto-triaged, {reviewed} -> needs_review")
+    return 0
+
+
+def _cmd_score(args) -> int:
+    from .score import score_vector
+    scored = skipped = 0
+    with Store(args.db) as store:
+        for f in store.iter_findings():
+            if f.cvss and f.cvss.vector:
+                try:
+                    base, sev = score_vector(f.cvss.vector)
+                except ValueError:
+                    skipped += 1
+                    continue
+                f.cvss.base_score = base
+                f.cvss.severity = sev
+                f.severity = sev
+                store.upsert(f)
+                scored += 1
+            else:
+                skipped += 1
+    print(f"[+] computed CVSS base score for {scored} finding(s) from their vector; "
+          f"{skipped} had no vector (predict one first, or enrich from NVD)")
+    return 0
+
+
+def _cmd_enrich(args) -> int:
+    try:
+        import requests  # noqa: F401
+    except ImportError:
+        print("[-] enrichment needs 'requests' (pip install requests)", file=sys.stderr)
+        return 1
+    from .enrich import EpssClient, KevCatalog, NvdClient
+
+    epss_client = None if args.no_epss else EpssClient()
+    kev = None if args.no_kev else KevCatalog()
+    nvd = NvdClient() if args.nvd else None
+    if kev:
+        kev.refresh()
+
+    # collect CVE ids from findings (source_ref or tags like CVE-xxxx)
+    def cve_of(f):
+        for cand in [f.source_ref] + list(f.tags):
+            if cand and cand.upper().startswith("CVE-"):
+                return cand.upper()
+        return None
+
+    n_epss = n_kev = n_nvd = 0
+    with Store(args.db) as store:
+        findings = list(store.iter_findings())
+        cves = {cve_of(f) for f in findings} - {None}
+        epss_map = epss_client.scores(cves) if (epss_client and cves) else {}
+        for f in findings:
+            cve = cve_of(f)
+            changed = False
+            if cve and cve in epss_map:
+                f.exploit.exploit_likelihood = epss_map[cve]["epss"]
+                f.exploit.likelihood_source = "epss"
+                n_epss += 1
+                changed = True
+            if kev and cve and kev.contains(cve):
+                if "kev" not in [t.lower() for t in f.tags]:
+                    f.tags.append("kev")
+                n_kev += 1
+                changed = True
+            if nvd and cve:
+                info = nvd.lookup(cve)
+                if info and info.get("cvss_vector"):
+                    f.cvss = CvssScore(vector=info["cvss_vector"],
+                                       base_score=info.get("cvss_score"),
+                                       severity=(info.get("severity") or ""),
+                                       source=ConfidenceSource.PRIOR)
+                    for c in info.get("cwes", []):
+                        if c not in [x.cwe_id for x in f.cwes]:
+                            from .schema import CweAssignment
+                            f.cwes.append(CweAssignment(c, 0.99, ConfidenceSource.PRIOR,
+                                                        "NVD official mapping"))
+                    n_nvd += 1
+                    changed = True
+            if changed:
+                store.upsert(f)
+    print(f"[+] enrichment: EPSS on {n_epss}, KEV on {n_kev}, NVD on {n_nvd} finding(s). "
+          f"({len(cves)} CVE id(s) seen)" + ("" if cves else
+          "  [note: no CVE ids on findings — EPSS/KEV/NVD key on CVE]"))
+    return 0
+
+
+def _cmd_prioritize(args) -> int:
+    from .enrich import KevCatalog
+    from . import prioritize as prio
+
+    kev = None
+    if not args.no_kev:
+        try:
+            kev = KevCatalog()
+        except Exception:  # noqa: BLE001
+            kev = None
+
+    def cve_of(f):
+        for cand in [f.source_ref] + list(f.tags):
+            if cand and cand.upper().startswith("CVE-"):
+                return cand.upper()
+        return None
+
+    n = 0
+    with Store(args.db) as store:
+        for f in store.iter_findings():
+            cve = cve_of(f)
+            in_kev = bool(kev and cve and kev.contains(cve)) or ("kev" in [t.lower() for t in f.tags])
+            prio.apply(f, epss=f.exploit.exploit_likelihood, in_kev=in_kev)
+            store.upsert(f)
+            n += 1
+    print(f"[+] scored priority for {n} finding(s). Use 'list --sort priority'.")
     return 0
 
 
@@ -86,14 +202,19 @@ def _cmd_list(args) -> int:
     with Store(args.db) as store:
         counts = store.count_by_status()
         rows = list(store.iter_findings(status=status))
+    if args.sort == "priority":
+        rows.sort(key=lambda f: (f.priority_score if f.priority_score is not None else -1),
+                  reverse=True)
     if not args.status:
         print("status counts:", ", ".join(f"{k}={v}" for k, v in sorted(counts.items())) or "(empty)")
     for f in rows:
         top = f.top_cwe()
         cwe = f"{top.cwe_id}@{top.confidence:.2f}" if top else "-"
         auth = "OK" if f.authorization.actionable else "UNAUTH"
-        print(f"  {f.id[:8]} [{f.status.value:12}] {auth:6} {f.severity or '-':8} "
-              f"{cwe:16} {(f.title or f.vuln_type)[:48]}  {f.host}")
+        pri = f"{f.priority_score:5.1f}" if f.priority_score is not None else "   - "
+        epss = f"{f.exploit.exploit_likelihood:.0%}" if f.exploit.exploit_likelihood is not None else "-"
+        print(f"  P{pri} {f.id[:8]} [{f.status.value:12}] {auth:6} {f.severity or '-':8} "
+              f"EPSS:{epss:>4} {cwe:16} {(f.title or f.vuln_type)[:40]}  {f.host}")
     return 0
 
 
@@ -103,42 +224,117 @@ def _cmd_show(args) -> int:
     if not f:
         print(f"[-] no finding {args.id}", file=sys.stderr)
         return 1
-    print(f.to_json())
+    print(json.dumps(f.to_dict(), indent=2))
+    return 0
+
+
+def _cmd_export(args) -> int:
+    from .export import write_defectdojo_generic
+    with Store(args.db) as store:
+        findings = list(store.iter_findings())
+    n = write_defectdojo_generic(findings, args.out)
+    print(f"[+] wrote {n} finding(s) to {args.out} (DefectDojo generic-import format). "
+          f"Upload via DefectDojo UI/API.")
+    return 0
+
+
+def _load_rows(path: str) -> list[dict]:
+    rows = []
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read().strip()
+    if text[:1] == "[":
+        rows = json.loads(text)
+    else:
+        rows = [json.loads(ln) for ln in text.splitlines() if ln.strip()]
+    return rows
+
+
+def _cmd_train(args) -> int:
+    try:
+        from .classify.sklearn_model import SklearnCweClassifier
+    except ImportError:
+        print("[-] training needs scikit-learn (pip install scikit-learn)", file=sys.stderr)
+        return 1
+    rows = _load_rows(args.data)
+    texts = [r["text"] for r in rows]
+    labels = [r["cwe"] for r in rows]
+    clf = SklearnCweClassifier.train(texts, labels)
+    clf.save(args.model)
+    print(f"[+] trained on {len(rows)} rows, {len(set(labels))} CWE classes -> {args.model}")
+    return 0
+
+
+def _cmd_evaluate(args) -> int:
+    try:
+        from .evaluate import evaluate
+    except ImportError:
+        print("[-] evaluation needs scikit-learn (pip install scikit-learn)", file=sys.stderr)
+        return 1
+    rows = _load_rows(args.data)
+    result = evaluate(rows, train_frac=args.train_frac, gate=args.gate)
+    print(json.dumps(result, indent=2))
     return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="harness",
-                                description="Authorized web bug-bounty triage harness (scaffold)")
+                                description="Authorized web bug-bounty triage harness")
     p.add_argument("--db", default="harness.db", help="SQLite datastore path")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    sp = sub.add_parser("init", help="create the datastore")
-    sp.set_defaults(func=_cmd_init)
-
-    sp = sub.add_parser("adapters", help="list ingest adapters")
-    sp.set_defaults(func=_cmd_adapters)
+    sub.add_parser("init", help="create the datastore").set_defaults(func=_cmd_init)
+    sub.add_parser("adapters", help="list ingest adapters").set_defaults(func=_cmd_adapters)
 
     sp = sub.add_parser("ingest", help="parse a tool output into findings")
-    sp.add_argument("--tool", required=True, help="adapter name (see 'adapters')")
-    sp.add_argument("--file", required=True, help="tool output file")
-    sp.add_argument("--program", help="bug-bounty program name")
-    sp.add_argument("--in-scope", action="store_true", help="assets are on the program allow-list")
-    sp.add_argument("--roe-ok", action="store_true", help="tool/rate/technique permitted by ROE")
-    sp.add_argument("--authorized-by", help="who confirmed authorization")
+    sp.add_argument("--tool", required=True)
+    sp.add_argument("--file", required=True)
+    sp.add_argument("--program")
+    sp.add_argument("--in-scope", action="store_true")
+    sp.add_argument("--roe-ok", action="store_true")
+    sp.add_argument("--authorized-by")
     sp.set_defaults(func=_cmd_ingest)
 
     sp = sub.add_parser("classify", help="run the CWE classifier + gate over NEW findings")
-    sp.add_argument("--gate", type=float, default=0.80, help="auto-accept confidence threshold")
+    sp.add_argument("--classifier", help="path to a trained model.pkl (else keyword baseline)")
+    sp.add_argument("--gate", type=float, default=0.80)
     sp.set_defaults(func=_cmd_classify)
 
+    sp = sub.add_parser("score", help="compute CVSS base score from each finding's vector")
+    sp.set_defaults(func=_cmd_score)
+
+    sp = sub.add_parser("enrich", help="pull EPSS / KEV / NVD for findings with a CVE id")
+    sp.add_argument("--no-epss", action="store_true")
+    sp.add_argument("--no-kev", action="store_true")
+    sp.add_argument("--nvd", action="store_true", help="also pull official CVSS/CWE from NVD")
+    sp.set_defaults(func=_cmd_enrich)
+
+    sp = sub.add_parser("prioritize", help="fuse CVSS + EPSS + KEV + PoC into a priority score")
+    sp.add_argument("--no-kev", action="store_true")
+    sp.set_defaults(func=_cmd_prioritize)
+
     sp = sub.add_parser("list", help="list findings")
-    sp.add_argument("--status", help="filter by status")
+    sp.add_argument("--status")
+    sp.add_argument("--sort", choices=["priority", "updated"], default="updated")
     sp.set_defaults(func=_cmd_list)
 
     sp = sub.add_parser("show", help="dump one finding as JSON")
     sp.add_argument("--id", required=True)
     sp.set_defaults(func=_cmd_show)
+
+    sp = sub.add_parser("export", help="export findings to DefectDojo generic-import JSON")
+    sp.add_argument("--out", required=True)
+    sp.set_defaults(func=_cmd_export)
+
+    sp = sub.add_parser("train", help="train the sklearn CWE classifier")
+    sp.add_argument("--data", required=True, help="JSONL/JSON of {text,cwe[,date]}")
+    sp.add_argument("--model", required=True, help="output model path (.pkl)")
+    sp.set_defaults(func=_cmd_train)
+
+    sp = sub.add_parser("evaluate", help="temporal-split evaluation of the CWE classifier")
+    sp.add_argument("--data", required=True, help="JSONL/JSON of {text,cwe,date}")
+    sp.add_argument("--train-frac", type=float, default=0.8)
+    sp.add_argument("--gate", type=float, default=0.80)
+    sp.set_defaults(func=_cmd_evaluate)
     return p
 
 
