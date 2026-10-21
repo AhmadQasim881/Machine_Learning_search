@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import sqlite3
 from typing import Iterable, Iterator, Optional
+from urllib.parse import urlparse
 
 from .schema import Finding, Status
 
@@ -47,11 +48,20 @@ def dedup_key(f: Finding) -> str:
     reported twice. Near-duplicate collapsing across wording/host variants is
     Stage 4 (embed + cluster), which this scaffold leaves as a stub.
     """
+    # include the URL path (not the query string) so distinct endpoints on one
+    # host are not collapsed together when the tool doesn't populate `param`.
+    path = ""
+    if f.url:
+        try:
+            path = urlparse(f.url if "://" in f.url else f"//{f.url}").path or ""
+        except ValueError:
+            path = ""
     basis = "|".join([
         (f.source_tool or "").lower(),
         (f.vuln_type or f.title or "").lower().strip(),
         (f.host or "").lower(),
         str(f.port or ""),
+        path.lower(),
         (f.param or "").lower(),
     ])
     return hashlib.sha1(basis.encode("utf-8")).hexdigest()[:16]

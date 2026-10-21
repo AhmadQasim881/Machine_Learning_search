@@ -74,9 +74,22 @@ def score(f: Finding, epss: Optional[float] = None, in_kev: bool = False) -> Pri
 
 
 def apply(f: Finding, epss: Optional[float] = None, in_kev: bool = False) -> PriorityResult:
-    """Score and write priority_score back onto the finding."""
+    """Score and write priority_score back onto the finding.
+
+    The score itself is left intact even for an unauthorized finding (it is valid
+    the moment scope is confirmed), but the result is flagged so callers sort
+    unauthorized findings to the bottom and never action them — see
+    `is_actionable` and the CLI priority sort."""
     res = score(f, epss=epss, in_kev=in_kev)
     f.priority_score = res.score
     if "kev" not in [t.lower() for t in f.tags] and in_kev:
         f.tags.append("kev")
+    if not f.authorization.actionable:
+        res.breakdown["unauthorized"] = 1.0
+        res.reasons.append("UNAUTHORIZED — out of scope/ROE (deprioritized; do not action)")
     return res
+
+
+def is_actionable(f: Finding) -> bool:
+    """A finding may be worked only if its Stage-0 authorization is satisfied."""
+    return f.authorization.actionable

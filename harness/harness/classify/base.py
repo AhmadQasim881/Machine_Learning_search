@@ -55,21 +55,28 @@ class CweClassifier(abc.ABC):
         return f
 
 
+# statuses the gate may (re)assign — the machine-set ones. Human/terminal states
+# (VALIDATED, REPORTED, ACCEPTED, REJECTED, REMEDIATED, FALSE_POSITIVE, DUPLICATE)
+# are never overwritten by an automated re-gate.
+_GATEABLE = {Status.NEW, Status.NEEDS_REVIEW, Status.TRIAGED}
+
+
 def apply_gate(f: Finding, threshold: float = DEFAULT_GATE) -> Finding:
     """The confidence gate. Sets overall confidence + status.
 
     - No CWE at all            -> NEEDS_REVIEW (human must classify)
     - top CWE confidence < T   -> NEEDS_REVIEW
     - top CWE confidence >= T   -> TRIAGED (auto-accepted suggestion)
-    A human can always override; this only decides what gets queued.
+
+    Only machine-set statuses are (re)assigned, so re-running after a model swap
+    updates NEW/NEEDS_REVIEW/TRIAGED but never clobbers a human decision.
     """
     top = f.top_cwe()
-    if top is None:
-        f.confidence = 0.0
-        if f.status == Status.NEW:
-            f.status = Status.NEEDS_REVIEW
+    f.confidence = top.confidence if top else 0.0
+    if f.status not in _GATEABLE:
         return f
-    f.confidence = top.confidence
-    if f.status in (Status.NEW,):
+    if top is None:
+        f.status = Status.NEEDS_REVIEW
+    else:
         f.status = Status.TRIAGED if top.confidence >= threshold else Status.NEEDS_REVIEW
     return f

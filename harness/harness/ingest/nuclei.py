@@ -47,7 +47,10 @@ class NucleiAdapter(Adapter):
                 rec = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            findings.append(self._one(rec, i))
+            try:
+                findings.append(self._one(rec, i))
+            except Exception:                 # one bad record must not abort the batch
+                continue
         return findings
 
     def _one(self, rec: dict[str, Any], idx: int) -> Finding:
@@ -55,13 +58,17 @@ class NucleiAdapter(Adapter):
         classification = info.get("classification", {}) or {}
         matched = rec.get("matched-at") or rec.get("host") or ""
         parsed = urlparse(matched if "://" in matched else f"//{matched}")
+        try:
+            port = parsed.port                 # raises ValueError on a malformed port
+        except ValueError:
+            port = None
 
         f = Finding(
             source_tool="nuclei",
             source_ref=rec.get("template-id", f"line:{idx}"),
             url=matched,
             host=parsed.hostname or rec.get("host", ""),
-            port=parsed.port,
+            port=port,
             vuln_type=info.get("name", ""),
             title=info.get("name", ""),
             description=info.get("description", "") or info.get("name", ""),
@@ -85,12 +92,13 @@ class NucleiAdapter(Adapter):
                 ))
 
         # pre-seed CVSS from nuclei's classification (tool-asserted)
-        vector = classification.get("cvss-metrics", "")
+        vector = classification.get("cvss-metrics") or ""     # may be null in JSON
         score = classification.get("cvss-score")
         if vector or score is not None:
+            version, bare = _cvss_version_and_bare(vector)
             f.cvss = CvssScore(
-                version="3.1" if vector.startswith("CVSS:3") else "3.1",
-                vector=vector.replace("CVSS:3.1/", "").replace("CVSS:3.0/", ""),
+                version=version,
+                vector=bare,
                 base_score=float(score) if score is not None else None,
                 severity=_sev_from_cvss(float(score)) if score is not None else f.severity,
                 source=ConfidenceSource.TOOL,
@@ -113,3 +121,22 @@ def _canon_cwe(raw: str) -> str:
     s = str(raw).strip().upper().replace("CWE-", "").replace("CWE", "")
     s = s.strip("- ")
     return f"CWE-{s}" if s.isdigit() else ""
+
+
+def _cvss_version_and_bare(vector: str) -> tuple[str, str]:
+    """Return (version, bare_vector) for a nuclei cvss-metrics string.
+
+    Reads the real version from the 'CVSS:x.y/' prefix (not hardcoded) and strips
+    that prefix version-agnostically so v2.0/v3.0/v3.1/v4.0 are labeled correctly.
+    """
+    v = (vector or "").strip()
+    version = "3.1"                       # nuclei's common default when unprefixed
+    if v.upper().startswith("CVSS:"):
+        tag = v.split("/", 1)[0]          # e.g. "CVSS:3.1"
+        ver = tag.split(":", 1)[1] if ":" in tag else ""
+        if ver in ("2.0", "3.0", "3.1", "4.0"):
+            version = ver
+        bare = v.split("/", 1)[1] if "/" in v else ""
+    else:
+        bare = v
+    return version, bare

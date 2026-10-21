@@ -10,6 +10,7 @@ dist/
 .pytest_cache/
 # trained models + enrichment caches are local artifacts
 *.pkl
+*.pkl.sha256
 .cache/
 # never commit scope/target data or raw scanner output
 targets/

@@ -173,7 +173,9 @@ class Finding:
     port: Optional[int] = None
     param: str = ""                   # the vulnerable parameter, if any
 
-    # Sun et al. 9-aspect schema (the normalization spine)
+    # Sun et al. 9-aspect schema (the normalization spine). This is the TARGET
+    # record; current ingest adapters populate only a few of these aspects — full
+    # extraction (BERT-NER/QA, design Step 8) is a documented future stage.
     vendor: str = ""
     product: str = ""
     version: str = ""

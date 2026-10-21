@@ -51,6 +51,21 @@ def to_defectdojo_generic(findings: Iterable[Finding]) -> dict[str, Any]:
         if f.priority_score is not None:
             desc_lines.append(f"Harness priority: {f.priority_score}")
 
+        # carry the full multi-label CWE set into tags (DefectDojo's `cwe` is single)
+        cwe_tags = [f"cwe-{c.cwe_id.split('-')[-1]}" for c in f.cwes]
+        tags = list(f.tags) + cwe_tags + ([f"tool:{f.source_tool}"] if f.source_tool else [])
+
+        active = f.status.value not in ("false_positive", "duplicate", "remediated")
+
+        # Stage-0 boundary: an unauthorized/out-of-scope finding must NOT look
+        # actionable in the human-facing backbone.
+        if not f.authorization.actionable:
+            active = False
+            tags.append("UNAUTHORIZED")
+            desc_lines.insert(0, "DO NOT ACTION — unauthorized/out-of-scope "
+                              f"(in_scope={f.authorization.in_scope}, "
+                              f"roe_ok={f.authorization.roe_ok}).\n")
+
         item: dict[str, Any] = {
             "title": f.title or f.vuln_type or "Finding",
             "description": "\n".join(desc_lines),
@@ -62,17 +77,18 @@ def to_defectdojo_generic(findings: Iterable[Finding]) -> dict[str, Any]:
             "service": f.host,
             "dynamic_finding": True,
             "static_finding": False,
-            "active": f.status.value not in ("false_positive", "duplicate", "remediated"),
+            "active": active,
             "false_p": f.status.value == "false_positive",
             "duplicate": f.status.value == "duplicate",
-            "tags": list(f.tags) + ([f"tool:{f.source_tool}"] if f.source_tool else []),
+            "tags": tags,
         }
-        if f.cvss and f.cvss.vector:
-            # DefectDojo accepts a cvssv3 vector string
+        # emit a CVSS vector field only for v3.x (DefectDojo's cvssv3); for
+        # v2.0/v4.0 keep the numeric score but not a mislabeled vector.
+        if f.cvss and f.cvss.vector and (f.cvss.version or "").startswith("3"):
             item["cvssv3"] = (f.cvss.vector if f.cvss.vector.startswith("CVSS:")
-                              else f"CVSS:3.1/{f.cvss.vector}")
-            if f.cvss.base_score is not None:
-                item["cvssv3_score"] = f.cvss.base_score
+                              else f"CVSS:{f.cvss.version or '3.1'}/{f.cvss.vector}")
+        if f.cvss and f.cvss.base_score is not None:
+            item["cvssv3_score"] = f.cvss.base_score
         if f.url:
             item["url"] = f.url
         out.append(item)

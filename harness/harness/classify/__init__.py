@@ -1,4 +1,6 @@
-"""CWE classification: the swappable interface, the gate, and the baseline stub."""
+"""CWE classification: the swappable interface, the gate, and the classifiers."""
+from __future__ import annotations
+
 from .base import DEFAULT_GATE, CweClassifier, apply_gate  # noqa: F401
 from .keyword_stub import KeywordCweClassifier  # noqa: F401
 

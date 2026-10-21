@@ -13,6 +13,7 @@ NVD_API_KEY. Cached + fail-soft like the other feeds.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from typing import Optional
@@ -23,6 +24,12 @@ except ImportError:
     requests = None                      # type: ignore
 
 _API = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+_log = logging.getLogger(__name__)
+
+# CWE ids that are not valid weakness mappings (pillars/placeholders); reject them
+# before accepting an NVD mapping. Design §1: NVD CWE labels are noisy.
+NON_MAPPABLE_CWES = {"CWE-1000", "CWE-699", "CWE-noinfo", "CWE-Other",
+                     "NVD-CWE-noinfo", "NVD-CWE-Other"}
 
 
 class NvdClient:
@@ -63,7 +70,7 @@ class NvdClient:
         headers = {"apiKey": self.api_key} if self.api_key else {}
         try:
             resp = requests.get(_API, params={"cveId": cve}, headers=headers,
-                                timeout=self.timeout)
+                                timeout=self.timeout, allow_redirects=False)
             resp.raise_for_status()
             parsed = self._parse(resp.json())
             if parsed is not None:
@@ -71,7 +78,8 @@ class NvdClient:
                 self._cache[cve] = parsed
                 self._save()
             return parsed
-        except Exception:
+        except requests.RequestException as e:   # transport only — fail soft
+            _log.warning("NVD fetch failed for %s, using cache: %s", cve, e)
             return rec
 
     @staticmethod
@@ -96,12 +104,14 @@ class NvdClient:
                 score = data.get("baseScore")
                 severity = data.get("baseSeverity", "").capitalize()
                 break
-        # CWEs
+        # CWEs — keep only concrete, mappable weaknesses (drop placeholders/pillars
+        # and NVD's "noinfo"/"Other"; these are the noisy labels the design warns of)
         cwes = []
         for w in cve.get("weaknesses", []):
             for d in w.get("description", []):
-                val = d.get("value", "")
-                if val.upper().startswith("CWE-"):
-                    cwes.append(val.upper())
+                val = (d.get("value", "") or "").upper()
+                if (val.startswith("CWE-") and val[4:].isdigit()
+                        and val not in NON_MAPPABLE_CWES):
+                    cwes.append(val)
         return {"cvss_vector": vector, "cvss_score": score, "severity": severity,
                 "cwes": sorted(set(cwes)), "description": desc}

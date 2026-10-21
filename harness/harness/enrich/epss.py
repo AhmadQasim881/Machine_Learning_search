@@ -12,6 +12,7 @@ API: https://api.first.org/data/v1/epss?cve=CVE-xxed,CVE-yyyy  (batchable, no ke
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from typing import Iterable, Optional
@@ -23,6 +24,7 @@ except ImportError:                      # requests is an optional dependency
 
 _API = "https://api.first.org/data/v1/epss"
 _BATCH = 100
+_log = logging.getLogger(__name__)
 
 
 class EpssClient:
@@ -80,17 +82,25 @@ class EpssClient:
                 chunk = missing[i:i + _BATCH]
                 try:
                     resp = requests.get(_API, params={"cve": ",".join(chunk)},
-                                        timeout=self.timeout)
+                                        timeout=self.timeout, allow_redirects=False)
                     resp.raise_for_status()
+                    returned = set()
                     for row in resp.json().get("data", []):
                         cve = row.get("cve", "").upper()
+                        returned.add(cve)
                         rec = {"epss": float(row.get("epss", 0.0)),
                                "percentile": float(row.get("percentile", 0.0)),
                                "_fetched": now}
                         self._cache[cve] = rec
                         out[cve] = {"epss": rec["epss"], "percentile": rec["percentile"]}
-                except Exception:
-                    break        # fail soft — keep whatever we have
+                    # negative-cache CVEs the feed doesn't know, so we don't re-fetch
+                    for cve in chunk:
+                        if cve not in returned:
+                            self._cache[cve] = {"epss": 0.0, "percentile": 0.0,
+                                                "_fetched": now, "_absent": True}
+                except requests.RequestException as e:   # transport only — fail soft
+                    _log.warning("EPSS fetch failed, using cache: %s", e)
+                    break
             self._save()
         return out
 

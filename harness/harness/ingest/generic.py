@@ -51,15 +51,27 @@ class GenericAdapter(Adapter):
         raw_text = raw_text.strip()
         if not raw_text:
             return []
-        # accept either a JSON array or JSONL
-        records: list[dict[str, Any]]
-        if raw_text[0] == "[":
-            records = json.loads(raw_text)
-        else:
-            records = [json.loads(ln) for ln in raw_text.splitlines() if ln.strip()]
+        # Try to parse the whole blob as JSON first (handles a pretty-printed
+        # single object or an array). Fall back to JSONL, skipping bad lines.
+        records: list[Any]
+        try:
+            data = json.loads(raw_text)
+            records = data if isinstance(data, list) else [data]
+        except json.JSONDecodeError:
+            records = []
+            for ln in raw_text.splitlines():
+                ln = ln.strip()
+                if not ln:
+                    continue
+                try:
+                    records.append(json.loads(ln))
+                except json.JSONDecodeError:
+                    continue
 
         findings = []
         for i, rec in enumerate(records):
+            if not isinstance(rec, dict):     # skip non-object records
+                continue
             kwargs: dict[str, Any] = {"source_tool": rec.get("source_tool", "generic"),
                                       "source_ref": rec.get("id", f"rec:{i}")}
             for field_name, src_key in self.mapping.items():

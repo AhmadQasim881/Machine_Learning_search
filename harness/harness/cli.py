@@ -1,17 +1,17 @@
 """
 harness.cli — the command line over the harness.
 
-    python -m harness init        --db harness.db
-    python -m harness ingest      --tool nuclei --file out.jsonl --program acme --in-scope --roe-ok
-    python -m harness classify    --db harness.db [--classifier model.pkl]
-    python -m harness score       --db harness.db            # CVSS vector -> base score
-    python -m harness enrich      --db harness.db [--no-epss] [--no-kev] [--nvd]
-    python -m harness prioritize  --db harness.db            # fuse CVSS+EPSS+KEV+PoC
-    python -m harness list        --db harness.db [--status needs_review] [--sort priority]
-    python -m harness show        --db harness.db --id <id>
-    python -m harness export      --db harness.db --out findings_dd.json   # DefectDojo
-    python -m harness train       --data cwe.jsonl --model model.pkl
-    python -m harness evaluate    --data cwe.jsonl [--train-frac 0.8]
+    python -m harness --db harness.db init
+    python -m harness --db harness.db ingest  --tool nuclei --file out.jsonl --program acme --in-scope --roe-ok
+    python -m harness --db harness.db classify [--classifier model.pkl] [--all]
+    python -m harness --db harness.db score                  # CVSS vector/prior -> base score
+    python -m harness --db harness.db enrich   [--no-epss] [--no-kev] [--nvd]
+    python -m harness --db harness.db prioritize             # fuse CVSS+EPSS+KEV+PoC
+    python -m harness --db harness.db list     [--status needs_review] [--sort priority]
+    python -m harness --db harness.db show     --id <id>
+    python -m harness --db harness.db export   --out findings_dd.json   # DefectDojo
+    python -m harness train     --data cwe.jsonl --model model.pkl
+    python -m harness evaluate  --data cwe.jsonl [--train-frac 0.8]
     python -m harness adapters
 
 Stdlib argparse only. The CLI wires the stages together; the real work lives in
@@ -57,7 +57,7 @@ def _cmd_ingest(args) -> int:
             new += int(is_new)
             dup += int(not is_new)
     print(f"[+] ingested {len(findings)} record(s) via '{args.tool}': {new} new, {dup} exact-duplicate")
-    if findings and not (args.in_scope and args.roe_ok):
+    if findings and not auth.actionable:
         print("[!] authorization NOT fully set (in-scope/ROE) — findings recorded "
               "but not-actionable until you confirm scope and rules of engagement.",
               file=sys.stderr)
@@ -70,40 +70,67 @@ def _cmd_classify(args) -> int:
     except Exception as e:  # noqa: BLE001
         print(f"[-] could not load classifier: {e}", file=sys.stderr)
         return 1
+    # default: only NEW findings; --all re-classifies all machine-set states
+    # (NEW/NEEDS_REVIEW/TRIAGED) so a model swap takes effect without clobbering
+    # human decisions; --status targets one state.
+    if args.status:
+        selected = [Status(args.status)]
+    elif args.all:
+        selected = [Status.NEW, Status.NEEDS_REVIEW, Status.TRIAGED]
+    else:
+        selected = [Status.NEW]
     triaged = reviewed = 0
+    todo = []
     with Store(args.db) as store:
-        todo = list(store.iter_findings(status=Status.NEW))
+        for st in selected:
+            todo.extend(store.iter_findings(status=st))
         for f in todo:
             clf.classify(f)
             apply_gate(f, threshold=args.gate)
             store.upsert(f)
             triaged += int(f.status == Status.TRIAGED)
             reviewed += int(f.status == Status.NEEDS_REVIEW)
-    print(f"[+] classified {len(todo)} new finding(s) with '{clf.name}' "
+    print(f"[+] classified {len(todo)} finding(s) with '{clf.name}' "
           f"(gate={args.gate}): {triaged} auto-triaged, {reviewed} -> needs_review")
     return 0
 
 
 def _cmd_score(args) -> int:
-    from .score import score_vector
-    scored = skipped = 0
+    from .score import (low_confidence_for_subjective, prior_vector, score_vector)
+    from .schema import ConfidenceSource, CvssScore
+    scored = seeded = skipped = 0
     with Store(args.db) as store:
         for f in store.iter_findings():
-            if f.cvss and f.cvss.vector:
-                try:
-                    base, sev = score_vector(f.cvss.vector)
-                except ValueError:
-                    skipped += 1
-                    continue
-                f.cvss.base_score = base
-                f.cvss.severity = sev
-                f.severity = sev
-                store.upsert(f)
-                scored += 1
-            else:
+            # seed a vector from the CWE prior when none exists (and not opted out)
+            if (not (f.cvss and f.cvss.vector)) and not args.no_prior:
+                top = f.top_cwe()
+                pv = prior_vector(top.cwe_id) if top else None
+                if pv:
+                    f.cvss = CvssScore(version="3.1", vector=pv,
+                                       source=ConfidenceSource.PRIOR,
+                                       per_metric_confidence=low_confidence_for_subjective())
+                    seeded += 1
+            if not (f.cvss and f.cvss.vector):
                 skipped += 1
-    print(f"[+] computed CVSS base score for {scored} finding(s) from their vector; "
-          f"{skipped} had no vector (predict one first, or enrich from NVD)")
+                continue
+            # don't overwrite an authoritative NVD-sourced score (source=PRIOR with a
+            # base_score already set); prior-SEEDED vectors have no score yet, so they
+            # still get computed below.
+            if f.cvss.source == ConfidenceSource.PRIOR and f.cvss.base_score is not None:
+                continue
+            try:
+                base, sev = score_vector(f.cvss.vector)
+            except ValueError:
+                skipped += 1
+                continue
+            f.cvss.base_score = base
+            f.cvss.severity = sev
+            f.severity = sev
+            store.upsert(f)
+            scored += 1
+    print(f"[+] CVSS: computed base score for {scored} finding(s)"
+          + (f" ({seeded} seeded from CWE priors — PR/C/I/A need human review)" if seeded else "")
+          + f"; {skipped} still lack a usable vector.")
     return 0
 
 
@@ -156,8 +183,12 @@ def _cmd_enrich(args) -> int:
                     for c in info.get("cwes", []):
                         if c not in [x.cwe_id for x in f.cwes]:
                             from .schema import CweAssignment
-                            f.cwes.append(CweAssignment(c, 0.99, ConfidenceSource.PRIOR,
-                                                        "NVD official mapping"))
+                            # NVD CWE labels are noisy (design §1: ~55% invalid), so
+                            # this is a SUGGESTION below the gate, not an authority —
+                            # it routes to NEEDS_REVIEW rather than auto-accepting.
+                            f.cwes.append(CweAssignment(
+                                c, 0.5, ConfidenceSource.PRIOR,
+                                "NVD-suggested (unverified; NVD CWE labels are noisy)"))
                     n_nvd += 1
                     changed = True
             if changed:
@@ -176,6 +207,7 @@ def _cmd_prioritize(args) -> int:
     if not args.no_kev:
         try:
             kev = KevCatalog()
+            kev.refresh()        # fetch once up front, not per-finding
         except Exception:  # noqa: BLE001
             kev = None
 
@@ -203,8 +235,12 @@ def _cmd_list(args) -> int:
         counts = store.count_by_status()
         rows = list(store.iter_findings(status=status))
     if args.sort == "priority":
-        rows.sort(key=lambda f: (f.priority_score if f.priority_score is not None else -1),
-                  reverse=True)
+        # actionable (authorized) findings first, then by priority desc; unauthorized
+        # rows sink to the bottom regardless of score (do not action them).
+        rows.sort(key=lambda f: (
+            1 if f.authorization.actionable else 0,
+            f.priority_score if f.priority_score is not None else -1,
+        ), reverse=True)
     if not args.status:
         print("status counts:", ", ".join(f"{k}={v}" for k, v in sorted(counts.items())) or "(empty)")
     for f in rows:
@@ -239,14 +275,14 @@ def _cmd_export(args) -> int:
 
 
 def _load_rows(path: str) -> list[dict]:
-    rows = []
     with open(path, encoding="utf-8") as fh:
         text = fh.read().strip()
-    if text[:1] == "[":
-        rows = json.loads(text)
-    else:
+    try:
+        data = json.loads(text)
+        rows = data if isinstance(data, list) else [data]
+    except json.JSONDecodeError:
         rows = [json.loads(ln) for ln in text.splitlines() if ln.strip()]
-    return rows
+    return [r for r in rows if isinstance(r, dict)]
 
 
 def _cmd_train(args) -> int:
@@ -294,12 +330,18 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--authorized-by")
     sp.set_defaults(func=_cmd_ingest)
 
-    sp = sub.add_parser("classify", help="run the CWE classifier + gate over NEW findings")
+    sp = sub.add_parser("classify", help="run the CWE classifier + gate over findings")
     sp.add_argument("--classifier", help="path to a trained model.pkl (else keyword baseline)")
     sp.add_argument("--gate", type=float, default=0.80)
+    sp.add_argument("--all", action="store_true",
+                    help="re-classify all machine-set states (NEW/NEEDS_REVIEW/TRIAGED), "
+                         "e.g. after a model swap; human decisions are preserved")
+    sp.add_argument("--status", help="classify only this status (default: NEW)")
     sp.set_defaults(func=_cmd_classify)
 
-    sp = sub.add_parser("score", help="compute CVSS base score from each finding's vector")
+    sp = sub.add_parser("score", help="compute CVSS base score (seeds from CWE priors if needed)")
+    sp.add_argument("--no-prior", action="store_true",
+                    help="do not seed a vector from the CWE->CVSS prior table")
     sp.set_defaults(func=_cmd_score)
 
     sp = sub.add_parser("enrich", help="pull EPSS / KEV / NVD for findings with a CVE id")

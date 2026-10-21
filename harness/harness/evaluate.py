@@ -45,7 +45,7 @@ def evaluate(rows: list[dict], train_frac: float = 0.8,
 
     clf = SklearnCweClassifier.train([r["text"] for r in train],
                                      [r["cwe"] for r in train])
-    seen = set(clf._labels)
+    seen = set(clf.labels)
 
     y_true, y_pred, confs = [], [], []
     unseen = 0

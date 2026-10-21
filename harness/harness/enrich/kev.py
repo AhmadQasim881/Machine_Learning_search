@@ -1,9 +1,10 @@
 """
 harness.enrich.kev — CISA Known Exploited Vulnerabilities catalog.
 
-KEV is a hard, authoritative override: if a CVE is on it, it is being exploited
-in the wild NOW. In prioritization this is a boolean that trumps model scores
-(§7). The catalog is one JSON file, refreshed roughly daily.
+KEV is a hard, authoritative override: if a CVE is on it, it has been observed
+exploited in the wild and remains on CISA's catalog. In prioritization this is a
+boolean that trumps model scores (§7). The catalog is one JSON file, refreshed
+roughly daily.
 
 Feed: https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json
 """
@@ -11,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import logging
 import time
 from typing import Optional
 
@@ -21,6 +23,7 @@ except ImportError:
 
 _FEED = ("https://www.cisa.gov/sites/default/files/feeds/"
          "known_exploited_vulnerabilities.json")
+_log = logging.getLogger(__name__)
 
 
 class KevCatalog:
@@ -53,24 +56,27 @@ class KevCatalog:
     def refresh(self, now: Optional[float] = None, force: bool = False) -> bool:
         """Fetch the catalog if stale. Returns True if data is available."""
         now = now if now is not None else time.time()
-        if not force and self._cves and (now - self._fetched) < self.ttl:
-            return True
+        # back off within the TTL whether the last attempt succeeded OR failed,
+        # so an empty/unreachable catalog isn't re-fetched on every call.
+        if not force and (now - self._fetched) < self.ttl:
+            return bool(self._cves)
         if requests is None:
             return bool(self._cves)
+        self._fetched = now               # record the attempt (success or not)
         try:
-            resp = requests.get(_FEED, timeout=self.timeout)
+            resp = requests.get(_FEED, timeout=self.timeout, allow_redirects=False)
             resp.raise_for_status()
             data = resp.json()
             self._cves = {v["cveID"].upper() for v in data.get("vulnerabilities", [])
                           if v.get("cveID")}
-            self._fetched = now
             self._save()
-        except Exception:
-            pass                          # fail soft — keep cached set
+        except requests.RequestException as e:   # transport only — fail soft
+            _log.warning("KEV fetch failed, using cache: %s", e)
         return bool(self._cves)
 
     def contains(self, cve: str) -> bool:
-        if not self._cves:
+        # refresh() self-throttles via the TTL, so this won't hammer the network
+        if not self._cves and (time.time() - self._fetched) >= self.ttl:
             self.refresh()
         return bool(cve) and cve.upper() in self._cves
 

@@ -7,7 +7,7 @@ prioritize → export to a backbone. Built from the research review in `docs/`.
 **v0.2 — now a working brain, not just a skeleton.** Real trainable CWE
 classifier, a correct offline CVSS v3.1 calculator, EPSS/KEV/NVD enrichment,
 transparent prioritization, a temporal-split evaluation harness, and a
-DefectDojo exporter. 18 tests pass.
+DefectDojo exporter. 34 tests pass.
 
 > ⚠️ **Authorized testing only.** Use this only against targets you have written
 > permission to test, within the program's scope **and** rules of engagement.
@@ -22,7 +22,7 @@ DefectDojo exporter. 18 tests pass.
 
 ## Why this exists / what's intentionally NOT here
 
-Built from an 18-paper + 44-link research review (`CVE-ML-papers_to_bug-bounty-harness.md`).
+Built from an 18-paper + 44-link research review (`../docs/ANALYSIS_cve-ml-to-harness.md`).
 The honest headline from that review: the research is strong on the *brain* and
 weak on the *hands*, and **mature open-source tools already own the datastore /
 dedup / report backbone** (see *Build vs adopt* below). So this scaffold is a
@@ -35,7 +35,7 @@ to prototype the ML enrichment, not a reinvention of a vuln-management platform.
 
 ```bash
 cd harness
-python -m unittest discover -s tests        # 18 tests (stdlib; sklearn tests skip if absent)
+python -m unittest discover -s tests        # 34 tests (stdlib; sklearn tests skip if absent)
 
 # --- core pipeline (no installs needed) ---
 python -m harness --db demo.db init
@@ -84,7 +84,7 @@ python -m harness --db demo.db prioritize           # now KEV/EPSS-aware
 
 Working today: schema, store, ingest, keyword + trained CWE classifier, the gate,
 CVSS v3.1 scoring, EPSS/KEV/NVD enrichment, transparent prioritization, temporal
-evaluation, DefectDojo export, CLI, 18 tests. Enrichment needs internet; the
+evaluation, DefectDojo export, CLI, 34 tests. Enrichment needs internet; the
 trained classifier needs scikit-learn.
 
 ---
@@ -108,7 +108,7 @@ harness/
   export/defectdojo.py Finding -> DefectDojo generic-import JSON
   cli.py / __main__.py the command line
 tools/build_nvd_dataset.py   build a real CVE->CWE training set from NVD
-tests/                 stdlib unittest (18 tests)
+tests/                 stdlib unittest (34 tests)
 samples/               example nuclei output + synthetic CWE training data
 SCOPE_AND_ROE.md       Stage-0 authorization template
 ```
@@ -126,7 +126,7 @@ else changes — the gate, store, and CLI are model-agnostic.
 
 ## Build vs adopt
 
-From a survey of 40+ existing projects (full writeup: `repo_recommendation.md`).
+From a survey of 40+ existing projects (full writeup: `../docs/BUILD_VS_ADOPT.md`).
 **No single repo matches the whole 0→8 pipeline — and you shouldn't want one.**
 Adopt mature tools for the commodity parts; spend your effort only where the
 "brain" is genuinely uncovered.
@@ -170,12 +170,14 @@ your stated "gaps" (verified-PoC gen, multi-label CWE) already exist immaturely
 
 ## Design provenance
 
-This scaffold follows `CVE-ML-papers_to_bug-bounty-harness.md` (the full research
-guide). Key principles baked in: multi-label CWE (not single-label); confidence-
-gate every model output; predict CVSS vectors then compute the score; treat NVD
-labels as noisy; keep a human in the loop; and keep Stage 0 authorization and
-non-destructive validation as hard boundaries.
+This harness follows `../docs/ANALYSIS_cve-ml-to-harness.md` (the full research
+guide). Key principles baked in: the finding record is **multi-label-ready** for
+CWE (the shipped classifiers are single-label — true multi-label is a future
+upgrade); confidence-gate every model output; predict CVSS vectors then compute
+the score with the official equations; treat NVD CWE labels as noisy (NVD CWEs
+enter below the gate, not as authority); keep a human in the loop; and keep
+Stage 0 authorization and non-destructive validation as hard boundaries.
 
 ## License
-MIT (scaffold code). The research papers and any third-party models/datasets you
+MIT — see `LICENSE`. The research papers and any third-party models/datasets you
 plug in keep their own licenses — check each before use.

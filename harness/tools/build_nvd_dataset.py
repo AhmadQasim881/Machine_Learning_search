@@ -47,19 +47,30 @@ def main() -> int:
     headers = {"apiKey": key} if key else {}
     delay = 0.8 if key else 6.5  # politeness / rate limit
 
+    # drop high-level/placeholder CWEs that are not concrete weakness mappings
+    non_mappable = {"CWE-1000", "CWE-699", "NVD-CWE-noinfo", "NVD-CWE-Other"}
+    max_consecutive_failures = 5
+
     kept = 0
     start = 0
+    failures = 0
     with open(args.out, "w", encoding="utf-8") as out:
         while kept < args.max:
             params = {"resultsPerPage": PAGE, "startIndex": start}
             try:
                 r = requests.get(API, params=params, headers=headers, timeout=60)
                 r.raise_for_status()
+                data = r.json()                      # inside try — a bad body is a failure
             except Exception as e:  # noqa: BLE001
-                print(f"[!] fetch error at startIndex={start}: {e}", file=sys.stderr)
+                failures += 1
+                print(f"[!] fetch error at startIndex={start} "
+                      f"({failures}/{max_consecutive_failures}): {e}", file=sys.stderr)
+                if failures >= max_consecutive_failures:
+                    print("[!] too many consecutive failures — stopping.", file=sys.stderr)
+                    break
                 time.sleep(delay * 2)
                 continue
-            data = r.json()
+            failures = 0                             # reset on any success
             vulns = data.get("vulnerabilities", [])
             if not vulns:
                 break
@@ -71,7 +82,8 @@ def main() -> int:
                 for w in cve.get("weaknesses", []):
                     for d in w.get("description", []):
                         val = d.get("value", "")
-                        if val.upper().startswith("CWE-") and val[4:].isdigit():
+                        if (val.upper().startswith("CWE-") and val[4:].isdigit()
+                                and val.upper() not in non_mappable):
                             cwes.append(val.upper())
                 cwes = sorted(set(cwes))
                 date = (cve.get("published", "") or "")[:10]
