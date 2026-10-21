@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.db
+*.sqlite3
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+# never commit scope/target data or raw scanner output
+targets/
+raw/
+*.jsonl
+!samples/*.jsonl

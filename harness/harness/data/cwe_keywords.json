@@ -1,0 +1,23 @@
+{
+  "_comment": "Web-focused CWE keyword table for the BASELINE stub only. Each entry: regex-ish keyword patterns (matched case-insensitively as whole-ish tokens) that suggest a CWE, with a per-pattern weight. This is a placeholder for a real model (Aota BoW+RF / Simonetto / RoBERTa-125M). Keep patterns specific to limit false positives. Note the under-covered web classes (918/639/352) the corpus flagged are included here deliberately.",
+  "cwes": [
+    {"cwe": "CWE-79",  "name": "Cross-site Scripting (XSS)", "patterns": [["xss", 0.6], ["cross site scripting", 0.7], ["cross-site scripting", 0.7], ["reflected script", 0.5], ["stored script", 0.5], ["dom xss", 0.7], ["script injection", 0.4]]},
+    {"cwe": "CWE-89",  "name": "SQL Injection", "patterns": [["sql injection", 0.8], ["sqli", 0.6], ["union select", 0.6], ["error-based sql", 0.6], ["blind sql", 0.6]]},
+    {"cwe": "CWE-918", "name": "Server-Side Request Forgery (SSRF)", "patterns": [["ssrf", 0.7], ["server side request forgery", 0.8], ["server-side request forgery", 0.8], ["internal metadata endpoint", 0.4], ["169.254.169.254", 0.6]]},
+    {"cwe": "CWE-639", "name": "Authorization Bypass / IDOR", "patterns": [["idor", 0.7], ["insecure direct object reference", 0.8], ["broken object level", 0.6], ["bola", 0.5], ["authorization bypass", 0.4], ["access another user", 0.4]]},
+    {"cwe": "CWE-352", "name": "Cross-Site Request Forgery (CSRF)", "patterns": [["csrf", 0.7], ["cross site request forgery", 0.8], ["cross-site request forgery", 0.8], ["missing anti-csrf", 0.6], ["no csrf token", 0.6]]},
+    {"cwe": "CWE-22",  "name": "Path Traversal", "patterns": [["path traversal", 0.8], ["directory traversal", 0.8], ["../", 0.4], ["lfi", 0.5], ["local file inclusion", 0.6], ["arbitrary file read", 0.5]]},
+    {"cwe": "CWE-78",  "name": "OS Command Injection", "patterns": [["command injection", 0.8], ["os command", 0.6], ["rce via command", 0.5], ["shell injection", 0.6]]},
+    {"cwe": "CWE-94",  "name": "Code Injection", "patterns": [["code injection", 0.7], ["remote code execution", 0.6], ["rce", 0.5], ["deserialization rce", 0.6], ["template injection rce", 0.5]]},
+    {"cwe": "CWE-1336","name": "Server-Side Template Injection (SSTI)", "patterns": [["ssti", 0.7], ["template injection", 0.7], ["server-side template injection", 0.8]]},
+    {"cwe": "CWE-601", "name": "Open Redirect", "patterns": [["open redirect", 0.8], ["unvalidated redirect", 0.7], ["url redirection", 0.4]]},
+    {"cwe": "CWE-611", "name": "XML External Entity (XXE)", "patterns": [["xxe", 0.7], ["xml external entity", 0.8], ["external entity injection", 0.6]]},
+    {"cwe": "CWE-287", "name": "Improper Authentication", "patterns": [["authentication bypass", 0.7], ["auth bypass", 0.6], ["login bypass", 0.6], ["weak authentication", 0.4]]},
+    {"cwe": "CWE-502", "name": "Deserialization of Untrusted Data", "patterns": [["insecure deserialization", 0.8], ["unsafe deserialization", 0.7], ["deserialization of untrusted", 0.8], ["java deserialization", 0.6]]},
+    {"cwe": "CWE-200", "name": "Information Exposure", "patterns": [["information disclosure", 0.6], ["sensitive data exposure", 0.6], ["information exposure", 0.6], ["info leak", 0.4]]},
+    {"cwe": "CWE-434", "name": "Unrestricted File Upload", "patterns": [["unrestricted file upload", 0.8], ["arbitrary file upload", 0.7], ["malicious file upload", 0.6]]},
+    {"cwe": "CWE-77",  "name": "Command Injection (generic)", "patterns": [["argument injection", 0.5], ["crlf injection", 0.5]]},
+    {"cwe": "CWE-306", "name": "Missing Authentication for Critical Function", "patterns": [["missing authentication", 0.7], ["unauthenticated access", 0.5], ["no authentication required", 0.5]]},
+    {"cwe": "CWE-798", "name": "Hard-coded Credentials", "patterns": [["hardcoded credentials", 0.7], ["hard-coded credentials", 0.7], ["default credentials", 0.5], ["exposed api key", 0.5]]}
+  ]
+}

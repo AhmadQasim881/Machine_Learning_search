@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "web-bugbounty-harness"
+version = "0.1.0"
+description = "Scaffold for the triage 'brain' of an authorized web bug-bounty testing pipeline"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []            # the scaffold runs on the standard library
+license = { text = "MIT" }
+
+[project.scripts]
+harness = "harness.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["harness*"]
+
+[tool.setuptools.package-data]
+harness = ["data/*.json"]
