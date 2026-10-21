@@ -1,0 +1,24 @@
+# The SCAFFOLD itself needs NOTHING beyond the Python 3.9+ standard library.
+# (schema, store, ingest, keyword CWE stub, CLI, and tests all run on stdlib.)
+#
+# The lines below are the OPTIONAL upgrade path — install them only when you
+# replace a stub with a real component. Grouped by the stage they serve.
+
+# --- Stage 5: real CWE classifier (replace keyword_stub) -------------------
+# scikit-learn>=1.3        # Aota-style BoW + RandomForest baseline
+# sentence-transformers>=2.2  # embeddings for Simonetto/RoBERTa-style classify
+# xgboost>=2.0             # per-element classifiers (Marchiori-style)
+# torch>=2.1               # if you fine-tune / run transformer encoders
+
+# --- Stage 6: CVSS scorer --------------------------------------------------
+# cvss>=3.0                # official CVSS v3.1/v4.0 vector -> score equations
+
+# --- Stage 4: dedup / semantic clustering ----------------------------------
+# umap-learn>=0.5          # dimensionality reduction (design: UMAP+HDBSCAN)
+# hdbscan>=0.8             # density clustering of finding embeddings
+
+# --- Stage 7: prioritization (external feeds; no training needed) ----------
+# requests>=2.31           # pull EPSS (FIRST) + CISA KEV
+
+# --- dev -------------------------------------------------------------------
+# pytest>=7.4              # (the shipped tests also run on stdlib unittest)
