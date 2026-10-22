@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentmem"
+version = "0.1.0"
+description = "Persistent, chain-finding memory for an autonomous web bug-bounty agent"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []                 # core runs on the standard library + SQLite
+license = { text = "MIT" }
+
+[project.optional-dependencies]
+# additive upgrades (the core does not need these)
+embeddings = ["sentence-transformers>=2.2"]
+graph = ["networkx>=3.0"]
+
+[tool.setuptools.packages.find]
+include = ["agentmem*"]
+
+[tool.setuptools.package-data]
+agentmem = ["schema.sql"]
