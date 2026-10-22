@@ -38,8 +38,9 @@ dissimilar* facts — which is exactly what finds chains.
 
 ```bash
 cd agentmem
-python -m unittest discover -s tests        # 17 tests, stdlib only
-python examples/demo.py                      # runs the 3 worked chain examples
+python -m unittest discover -s tests        # 37 tests, stdlib only
+python examples/demo.py                      # web: 3 worked exploit-chain examples
+python examples/codereview_demo.py           # code-review: taint-flow chains, SAME engine
 ```
 
 ```python
@@ -122,9 +123,37 @@ agentmem/
   security.py       sanitize, trust policy, SecretsVault, redaction
   working.py        persisted working set + rehydrate()
   memory.py         Memory facade — the only API the agent uses
-tests/              stdlib unittest (17 tests; the 3 worked chains included)
-examples/demo.py    runnable demonstration
+  profiles.py       DOMAIN profiles over the one engine (WEB, CODEREVIEW, custom)
+tests/              stdlib unittest (37 tests; web chains + code-review taint chains)
+examples/demo.py              web exploit-chain demo
+examples/codereview_demo.py   code-review taint-chain demo (same engine)
 ```
+
+## Any domain, one engine (profiles)
+
+The engine (store, chains, capability unification, retrieval, forgetting,
+persistence, security) is **domain-agnostic**. A `Profile` supplies only the
+domain knowledge: the capability ontology (what facts provide/require), the
+escalation rules + goal severities, and how to label a node in a narrative.
+Swapping the profile retargets the whole memory — same graph, same chain engine.
+
+```python
+from agentmem import Memory
+from agentmem.profiles import CODEREVIEW          # or WEB (default), or your own Profile
+
+m = Memory("repo.db", profile=CODEREVIEW)          # source-code taint analysis
+m.add_taint_source("handlers/user.py", var="name", line=12)
+m.add_taint_prop("handlers/user.py", var_in="name", var_out="query", line=15)
+m.add_taint_sink("db/exec.py", var="query", sink_type="sql", line=40)
+m.chains()   # -> taint_source -> taint_prop -> taint_sink ==> FULL_DB_READ
+```
+
+A data-flow vulnerability **is** a capability chain: a source `provides tainted{var}`,
+a sink `requires tainted{var}`, and the path between them is found by the identical
+unification engine that chains web findings. Because a codebase is far larger than a
+context window, the graph + paging + retrieval is exactly what long-horizon code
+review needs. Write a new `Profile` (ontology + labels) to add any other domain —
+cloud/IaC audit, OSINT pivoting, SRE incident memory — on the same core.
 
 ## Honest scope
 
@@ -133,8 +162,9 @@ examples/demo.py    runnable demonstration
 - The **verification gate is only as good as the oracle you pass** — a finding is
   `confirmed` only when the agent provides concrete proof; otherwise it is
   `suspected` and produces `candidate` (not confirmed) chains.
-- The capability **ontology is a curated starting set** (`config.py`) — extend the
-  tokens/extractors/escalation rules as you cover more vuln classes.
+- The capability **ontology is a curated starting set** (a `Profile`, see
+  `profiles.py`) — extend the tokens/extractors/escalation rules per vuln class,
+  or write a new `Profile` for a new domain.
 - The secrets-vault cipher is **stdlib obfuscation-at-rest**, not a KMS — back it
   with real crypto (Fernet/KMS) for production; the interface is unchanged.
 - For authorized testing only.
@@ -165,9 +195,11 @@ A verified review pass fixed real correctness bugs and added robustness:
 
 Node-level provenance → full consensus promotion (N-consistent); persisted
 Hypothesis nodes for the next-probe queue; per-target "portrait" summaries;
-embedding-based semantic recall + RRF fusion + `SAME_AS` synonym edges;
-incremental (per-node) chain detection; and the **core + profile** refactor that
-makes a source-code-review (taint-flow) profile drop onto the same engine.
+embedding-based semantic recall + RRF fusion + `SAME_AS` synonym edges; and
+incremental (per-node) chain detection.
+
+*(Done: the **core + profile** split — a web profile and a source-code-review
+taint-flow profile now run on the same engine; see "Any domain, one engine".)*
 
 ## License
 MIT.

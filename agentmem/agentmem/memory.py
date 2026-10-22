@@ -23,6 +23,7 @@ from . import chains as chainmod
 from . import forget
 import os
 
+from . import profiles
 from . import retrieve
 from . import write
 from .security import SecretsVault
@@ -31,10 +32,14 @@ from .working import WorkingMemory
 
 
 class Memory:
-    def __init__(self, path: str = "campaign.db"):
+    def __init__(self, path: str = "campaign.db", profile=None):
+        """`profile` selects the domain ontology (default: web bug-bounty). Pass
+        `agentmem.profiles.CODEREVIEW` (or a custom Profile) to retarget the same
+        engine to another domain — e.g. source-code taint analysis."""
         self.store = Store(path)
         self.vault = SecretsVault(self.store)
         self.working = WorkingMemory(self.store, vault=self.vault)
+        self.profile = profile or profiles.WEB
 
     # ---- lifecycle ------------------------------------------------------- #
     def tick(self) -> int:
@@ -71,7 +76,42 @@ class Memory:
                     attrs: Optional[dict] = None, trust: str = "agent_asserted",
                     severity: int = 5) -> int:
         return write.add_finding(self.store, vuln_class, host, path, param,
-                                 confirmed, oracle, attrs, trust, severity=severity)
+                                 confirmed, oracle, attrs, trust, severity=severity,
+                                 profile=self.profile)
+
+    def add_fact(self, kind: str, canonical_key: str, attrs: Optional[dict] = None,
+                 node_type: str = "finding", confirmed: bool = False, oracle: str = "",
+                 trust: str = "agent_asserted", severity: int = 5) -> int:
+        """Domain-agnostic ingest (any profile). `kind` selects the capability
+        extractor; `canonical_key` is the dedup identity (build it with the
+        profile's key helper)."""
+        return write.add_fact(self.store, kind, canonical_key, attrs, self.profile,
+                              node_type, confirmed, oracle, trust, severity)
+
+    # ---- code-review (taint) sugar — only meaningful under CODEREVIEW -------- #
+    def add_taint_source(self, file: str, var: str, symbol: str = "", line: int = 0,
+                         confirmed: bool = True, oracle: str = "source") -> int:
+        key = profiles.cr_key("taint_source", file, symbol, var, line)
+        return self.add_fact("taint_source", key,
+                             {"file": file, "var": var, "symbol": symbol, "line": line},
+                             confirmed=confirmed, oracle=oracle)
+
+    def add_taint_prop(self, file: str, var_in: str, var_out: str, symbol: str = "",
+                       line: int = 0, confirmed: bool = True, oracle: str = "dataflow") -> int:
+        key = profiles.cr_key("taint_prop", file, symbol, var_out, line)
+        return self.add_fact("taint_prop", key,
+                             {"file": file, "var_in": var_in, "var_out": var_out,
+                              "symbol": symbol, "line": line},
+                             confirmed=confirmed, oracle=oracle)
+
+    def add_taint_sink(self, file: str, var: str, sink_type: str, symbol: str = "",
+                       line: int = 0, confirmed: bool = True, oracle: str = "sink",
+                       severity: int = 8) -> int:
+        key = profiles.cr_key("taint_sink", file, symbol, var, line)
+        return self.add_fact("taint_sink", key,
+                             {"file": file, "var": var, "sink_type": sink_type,
+                              "symbol": symbol, "line": line},
+                             confirmed=confirmed, oracle=oracle, severity=severity)
 
     def add_technique_rule(self, name: str, provides: list, requires: list,
                            confirmed: bool = True, attrs: Optional[dict] = None) -> int:
@@ -102,7 +142,7 @@ class Memory:
         Detection runs lazily (only when new facts were written since last call).
         Retracted (invalidated) chains are hidden by default."""
         if self.store.take_dirty():
-            chainmod.detect(self.store)
+            chainmod.detect(self.store, self.profile)
         out = []
         for c in self.store.chains():
             if c["status"] == "invalidated" and not include_invalidated:
@@ -120,7 +160,7 @@ class Memory:
 
     def next_probes(self) -> list[dict]:
         """Goal-directed: the missing capabilities that would complete a chain."""
-        return chainmod.next_probes(self.store)
+        return chainmod.next_probes(self.store, self.profile)
 
     # ---- maintenance ----------------------------------------------------- #
     def pin(self, node_id: int) -> None:
@@ -134,7 +174,7 @@ class Memory:
         re-detect. (LLM summarization/insight curation plug in here when configured.)"""
         self.store.take_dirty()          # we are about to run a full detect
         pinned = forget.auto_pin(self.store)
-        chainmod.detect(self.store)
+        chainmod.detect(self.store, self.profile)
         return {"pinned": pinned, "chains": len(self.store.chains())}
 
     def get_secret(self, handle: str):

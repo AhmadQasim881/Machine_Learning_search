@@ -59,13 +59,44 @@ def ensure_param(store: Store, host: str, path: str, name: str,
     return pid
 
 
+def add_fact(store: Store, kind: str, canonical_key: str, attrs: Optional[dict] = None,
+             profile=None, node_type: str = "finding", confirmed: bool = False,
+             oracle: str = "", trust: str = "agent_asserted", severity: int = 5) -> int:
+    """Domain-agnostic fact ingest: upsert a node, attach the capability tokens the
+    active profile derives for `kind`, apply the verification gate, pin if
+    confirmed, and mark chains dirty. The web `add_finding` is sugar over this; a
+    code-review profile uses it via add_taint_* helpers. Same engine, any domain."""
+    attrs = dict(attrs or {})
+    attrs["kind"] = kind
+    if oracle:
+        attrs["oracle"] = sanitize(oracle, 500)
+    attrs = {k: (sanitize(v, 2000) if isinstance(v, str) else v) for k, v in attrs.items()}
+
+    status = "confirmed" if (confirmed and oracle and may_seed_chain(trust)) else "suspected"
+    confidence = 0.9 if status == "confirmed" else 0.35
+    if not may_seed_chain(trust):
+        confidence = min(confidence, 0.3)
+
+    nid = store.upsert_node(node_type, canonical_key, attrs,
+                            importance=max(5, severity), confidence=confidence,
+                            trust=trust, status=status, allow_revive=(status == "confirmed"))
+    prov, req = caps.capabilities_for(kind, attrs, profile)
+    store.set_capabilities(nid, prov, req)
+    if prov:
+        store.add_lesson(nid, "forward", f"{kind} provides " + ", ".join(p[0] for p in prov))
+    if status == "confirmed":
+        store.pin(nid)
+    store.mark_dirty()
+    return nid
+
+
 def add_finding(store: Store, vuln_class: str, host: str = "", path: str = "/",
                 param: str = "", confirmed: bool = False, oracle: str = "",
                 attrs: Optional[dict] = None, trust: str = "agent_asserted",
-                obs_id: Optional[int] = None, severity: int = 5) -> int:
-    """Record a finding, attach its capability tokens, link it structurally, and
-    trigger chain detection. VERIFICATION GATE: status=confirmed only if an
-    oracle is supplied; otherwise suspected (low confidence)."""
+                obs_id: Optional[int] = None, severity: int = 5, profile=None) -> int:
+    """Record a WEB finding, attach its capability tokens, link it structurally, and
+    mark chains dirty. VERIFICATION GATE: status=confirmed only if an oracle is
+    supplied AND the source is trusted; otherwise suspected (low confidence)."""
     attrs = dict(attrs or {})
     attrs.setdefault("host", C.norm_host(host))
     attrs.setdefault("path", C.norm_path(path) if path else "")
@@ -99,7 +130,7 @@ def add_finding(store: Store, vuln_class: str, host: str = "", path: str = "/",
             store.add_edge(pid, fid, "MENTIONS", confidence=confidence, trust=trust)
 
     # capability tokens from typed extractors (never from target text)
-    prov, req = caps.capabilities_for(vuln_class, attrs)
+    prov, req = caps.capabilities_for(vuln_class, attrs, profile)
     store.set_capabilities(fid, prov, req)
 
     # dual record: forward lesson seeding chain hypotheses

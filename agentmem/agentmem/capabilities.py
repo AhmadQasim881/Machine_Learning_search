@@ -27,10 +27,14 @@ Token = tuple[str, dict]
 
 
 # --- building capabilities for a finding ----------------------------------- #
-def capabilities_for(vuln_class: str, attrs: dict) -> tuple[list[Token], list[Token]]:
-    """Return (provides, requires) token lists for a finding of this vuln_class."""
-    prov = config.PROVIDES.get(vuln_class, lambda a: [])(attrs)
-    req = config.REQUIRES.get(vuln_class, lambda a: [])(attrs)
+def capabilities_for(kind: str, attrs: dict, profile=None) -> tuple[list[Token], list[Token]]:
+    """Return (provides, requires) token lists for a fact of this `kind`.
+    `kind` is the web vuln_class (open_redirect/idor/...) or a code-review taint
+    role (taint_source/taint_prop/taint_sink), resolved via the active profile."""
+    prov_map = profile.provides if profile is not None else config.PROVIDES
+    req_map = profile.requires if profile is not None else config.REQUIRES
+    prov = prov_map.get(kind, lambda a: [])(attrs)
+    req = req_map.get(kind, lambda a: [])(attrs)
     return prov, req
 
 
@@ -74,14 +78,16 @@ def any_unifies(provides: list[Token], require: Token) -> Optional[dict]:
 
 
 # --- escalation: does an accumulated capability set reach a GOAL? ----------- #
-def reached_goals(available: list[Token]) -> list[tuple[str, int]]:
-    """Return [(goal, severity)] for every escalation rule whose `need` tokens
-    are all satisfied by the available provided tokens."""
+def reached_goals(available: list[Token], profile=None) -> list[tuple[str, int]]:
+    """Return [(goal, severity)] for every escalation rule (from the active
+    profile) whose `need` tokens are all satisfied by the available tokens."""
+    rules = profile.escalation_rules if profile is not None else config.ESCALATION_RULES
+    sev = profile.goal_severity if profile is not None else config.GOAL_SEVERITY
     out = []
-    for rule in config.ESCALATION_RULES:
+    for rule in rules:
         if all(any_unifies(available, need) is not None for need in rule["need"]):
             goal = rule["goal"]
-            out.append((goal, config.GOAL_SEVERITY.get(goal, 5)))
+            out.append((goal, sev.get(goal, 5)))
     return out
 
 

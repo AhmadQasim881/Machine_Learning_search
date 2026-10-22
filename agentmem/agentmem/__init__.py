@@ -16,7 +16,8 @@ Quick start:
     for ch in m.chains():
         print(ch["severity"], ch["narrative"])
 """
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from .memory import Memory  # noqa: F401
+from .profiles import CODEREVIEW, WEB, Profile  # noqa: F401
 from .store import Store    # noqa: F401

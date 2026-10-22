@@ -77,10 +77,11 @@ def rebuild_enables(store: Store) -> int:
     return n_edges
 
 
-def detect(store: Store) -> list[int]:
+def detect(store: Store, profile=None) -> list[int]:
     """Full detection pass: rebuild ENABLES, search for goal-reaching paths,
     materialize the MINIMAL Chain per goal, and retract chains whose steps were
-    invalidated. Returns the chain row ids found/updated."""
+    invalidated. Returns the chain row ids found/updated. The `profile` supplies
+    the escalation rules/goal severities (web vs. code-review vs. ...)."""
     rebuild_enables(store)
     nodes = {n["id"]: n for n in _chain_nodes(store)}
     provides = {nid: store.get_provides(nid) for nid in nodes}
@@ -103,7 +104,7 @@ def detect(store: Store) -> list[int]:
     def walk(path: list[int], edges: list[Optional[int]], avail: list, conf: float):
         if len(path) > config.CHAIN_MAX_DEPTH:
             return
-        for goal, severity in caps.reached_goals(avail):
+        for goal, severity in caps.reached_goals(avail, profile):
             candidates.append((goal, severity, list(path), list(edges), conf))
         tail = path[-1]
         for (nxt, eid) in adj.get(tail, [])[: config.CHAIN_MAX_WIDTH]:
@@ -124,7 +125,7 @@ def detect(store: Store) -> list[int]:
     found: list[int] = []
     seen: set[str] = set()
     for goal, severity, path, edges, conf in _keep_minimal(candidates):
-        cid = _materialize(store, path, edges, goal, severity, conf, nodes, seen)
+        cid = _materialize(store, path, edges, goal, severity, conf, nodes, seen, profile)
         if cid is not None:
             found.append(cid)
 
@@ -172,7 +173,7 @@ def retract_invalidated(store: Store) -> int:
 
 
 def _materialize(store: Store, path: list[int], edges: list, goal: str,
-                 severity: int, conf: float, nodes: dict, seen: set) -> Optional[int]:
+                 severity: int, conf: float, nodes: dict, seen: set, profile=None) -> Optional[int]:
     dedup = f"{goal}|" + ",".join(str(x) for x in sorted(path))
     if dedup in seen:
         return None
@@ -180,25 +181,29 @@ def _materialize(store: Store, path: list[int], edges: list, goal: str,
     all_confirmed = all(nodes[nid]["status"] == "confirmed" for nid in path)
     status = "confirmed" if all_confirmed else "candidate"
     score = round(conf * (severity / 10.0), 4)
-    narrative = _narrate(store, path, goal, nodes)
+    narrative = _narrate(store, path, goal, nodes, profile)
     steps = list(zip(path, edges))
     return store.upsert_chain(goal, score, severity, status, narrative, steps, dedup)
 
 
-def _narrate(store: Store, path: list[int], goal: str, nodes: dict) -> str:
+def _narrate(store: Store, path: list[int], goal: str, nodes: dict, profile=None) -> str:
     parts = []
     for nid in path:
         a = store.node_attrs(nid)
-        label = a.get("vuln_class") or a.get("name") or nodes[nid]["type"]
-        loc = a.get("host", "")
-        if a.get("path"):
-            loc = f"{loc}{a['path']}"
+        if profile is not None:
+            label = profile.label_for(a, nodes[nid]["type"])
+            loc = ""
+        else:
+            label = a.get("vuln_class") or a.get("name") or nodes[nid]["type"]
+            loc = a.get("host", "")
+            if a.get("path"):
+                loc = f"{loc}{a['path']}"
         parts.append(f"{label}" + (f" @ {loc}" if loc else ""))
     return " -> ".join(parts) + f"  ==>  {goal.upper()}"
 
 
 # --- backward chaining: what probe would complete a chain? ----------------- #
-def next_probes(store: Store) -> list[dict]:
+def next_probes(store: Store, profile=None) -> list[dict]:
     """Goal-directed suggestions: for each escalation rule not yet fully reached,
     report the missing capability token(s) — the agent's next-best probe."""
     nodes = _chain_nodes(store)
@@ -206,7 +211,9 @@ def next_probes(store: Store) -> list[dict]:
     for n in nodes:
         avail.extend(store.get_provides(n["id"]))
     out = []
-    for rule in config.ESCALATION_RULES:
+    rules = profile.escalation_rules if profile is not None else config.ESCALATION_RULES
+    gsev = profile.goal_severity if profile is not None else config.GOAL_SEVERITY
+    for rule in rules:
         missing = [need for need in rule["need"] if caps.any_unifies(avail, need) is None]
         if missing:
             # some capability is still needed to reach this goal (incl. single-need
@@ -214,7 +221,7 @@ def next_probes(store: Store) -> list[dict]:
             for name, attrs in missing:
                 out.append({
                     "goal": rule["goal"],
-                    "severity": config.GOAL_SEVERITY.get(rule["goal"], 5),
+                    "severity": gsev.get(rule["goal"], 5),
                     "missing_capability": name,
                     "constraints": attrs,
                     "suggestion": f"obtain capability '{name}' to escalate toward {rule['goal']}",
