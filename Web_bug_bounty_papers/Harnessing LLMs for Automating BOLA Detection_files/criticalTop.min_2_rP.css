@@ -1,0 +1,78 @@
+.secondaryNavComp{position:fixed;top:0;left:0;right:0;z-index:997}
+.secondaryNavComp .secondary-nav{min-height:3.75rem;font-family:var(--font-primary);opacity:0;box-shadow:0 1px 20px 1px rgba(0,0,0,0.15);will-change:transform,opacity}
+.secondaryNavComp .secondary-nav.position-absolute{position:absolute;left:0;right:0;z-index:1}
+@media(min-width:576px){.secondaryNavComp .secondary-nav .container-fluid{margin:0 15px}
+}
+.secondaryNavComp .secondary-nav .pl-3{padding-left:0 !important}
+@media(min-width:1600px){.secondaryNavComp .secondary-nav .pl-3{padding-left:1rem !important}
+}
+.secondaryNavComp .secondary-nav .py-2{padding-top:0 !important;padding-bottom:0 !important}
+.secondaryNavComp .secondary-nav .p-1{padding:0 !important}
+.secondaryNavComp .secondary-nav.wrap-right-btn .py-2{padding-top:.5rem !important;padding-bottom:.5rem !important}
+.secondaryNavComp .secondary-nav .btn.no-wrap{white-space:nowrap}
+.secondaryNavComp .secondary-nav .label-2{letter-spacing:normal}
+.secondaryNavComp .secondary-nav .nav-select.label-2{font-size:14px;line-height:1rem}
+.secondaryNavComp .secondary-nav .dropdown-menu{display:none}
+.secondaryNavComp .secondary-nav .col-auto{height:3.75rem}
+.secondaryNavComp .secondary-nav .col-auto.left-brand-section{padding-left:0;padding-right:0;max-width:fit-content}
+@media(min-width:768px){.secondaryNavComp .secondary-nav .col-auto.left-brand-section{max-width:25%}
+}
+@media(min-width:1400px){.secondaryNavComp .secondary-nav .col-auto.left-brand-section{max-width:100%;padding-right:15px}
+}
+@media(min-width:1200px){.secondaryNavComp .secondary-nav .col-auto.right-action-section{max-width:75%}
+}
+@media(min-width:1400px){.secondaryNavComp .secondary-nav .col-auto.right-action-section{max-width:100%}
+}
+.secondaryNavComp .secondary-nav .brand-logo{height:100%;display:flex;align-items:center;padding-left:15px;padding-right:15px !important}
+.secondaryNavComp .secondary-nav .brand-logo img{max-height:1.75rem;min-height:1.75rem;max-width:max-content}
+.secondaryNavComp .secondary-nav .page-breadcrumbs{font-size:.875rem;display:flex;flex-wrap:wrap}
+.secondaryNavComp .secondary-nav .page-breadcrumbs a{white-space:nowrap}
+.secondaryNavComp .secondary-nav .page-breadcrumbs .separator{color:#fa582d}
+.secondaryNavComp .secondary-nav .navbar-toggler{display:inline-block;background-repeat:no-repeat;background-position:center;background-color:transparent;border:0;width:45px;height:45px;background-size:24px 24px;background-image:url("/etc/clientlibs/clean/imgs/chevron-down-black.svg");order:1;font-size:0;outline:0;box-shadow:none;transition:background .3s}
+.secondaryNavComp .secondary-nav .navbar-toggler[aria-expanded="true"]{background-image:url("/etc/clientlibs/clean/imgs/chevron-up-black.svg")}
+.secondaryNavComp .secondary-nav .nav{width:100%}
+.secondaryNavComp .secondary-nav .nav .nav-item .nav-link{font-size:.875rem;color:#141414 !important;position:relative;padding:.75rem}
+@media(min-width:1200px){.secondaryNavComp .secondary-nav .nav .nav-item .nav-link{border-radius:.375rem;display:flex;align-items:center}
+.secondaryNavComp .secondary-nav .nav .nav-item .nav-link::before{content:attr(aria-label);font-weight:600;height:1rem;visibility:hidden;overflow:hidden;user-select:none;pointer-events:none}
+.secondaryNavComp .secondary-nav .nav .nav-item .nav-link>span{position:absolute;left:.75rem;top:.6rem}
+}
+@media(min-width:768px){.secondaryNavComp .secondary-nav .dropdown.wrap{max-width:10rem}
+.secondaryNavComp .secondary-nav .pos-md-abs{position:absolute;right:-15px;top:50%;transform:translateY(-50%)}
+}
+@media(min-width:1200px){.secondaryNavComp .secondary-nav .nav-item{padding:0 2px}
+.secondaryNavComp .secondary-nav .dropdown.pl-xl-3{padding-left:0 !important;padding-right:0;height:100%}
+.secondaryNavComp .secondary-nav .dropdown.pl-xl-3 .dropdown-toggle{height:100%}
+.secondaryNavComp .secondary-nav .right-buttons.pl-xl-3{padding-left:0 !important;padding-right:15px}
+.secondaryNavComp .secondary-nav .pos-xl-abs{position:absolute;right:-15px;top:50%;transform:translateY(-50%)}
+}
+@media(min-width:1400px){.secondaryNavComp .secondary-nav .dropdown.pl-xl-3{padding-left:4px !important}
+.secondaryNavComp .secondary-nav .dropdown.wrap{max-width:11rem}
+.secondaryNavComp .secondary-nav .mr-xxl-3{margin-right:1rem}
+.secondaryNavComp .secondary-nav .mr-xxl-4{margin-right:1.5rem}
+.secondaryNavComp .secondary-nav .mr-xxl-5,.secondaryNavComp .secondary-nav .nav.mr-5{margin-right:3rem}
+.secondaryNavComp .secondary-nav .justify-content-xxl-center{justify-content:center !important}
+.secondaryNavComp .secondary-nav .nav-item{padding:0 4px}
+.secondaryNavComp .secondary-nav .nav-item:first-of-type{padding-left:0}
+}
+@media(min-width:1600px){.secondaryNavComp .secondary-nav .nav-item{padding:0 8px}
+.secondaryNavComp .secondary-nav .nav-item:first-of-type{padding-left:0}
+.secondaryNavComp .secondary-nav .dropdown.pl-xl-3{padding-left:.5rem !important}
+.secondaryNavComp .secondary-nav .right-buttons.pl-xl-3{padding-left:.5rem !important}
+}
+@media(min-width:1920px){.secondaryNavComp .secondary-nav .dropdown.wrap{max-width:12.1rem}
+}
+@media(min-width:2560px){.secondaryNavComp .secondary-nav .dropdown .btn-primary{padding:.5rem 1.5rem}
+}
+@media(max-width:1199.98px){.secondaryNavComp .secondary-nav .col-auto.d-xl-none,.secondaryNavComp .secondary-nav .col-auto.d-md-none{justify-content:flex-end;flex-grow:1}
+.secondaryNavComp .secondary-nav .col-auto.d-xl-none .navbar-toggler,.secondaryNavComp .secondary-nav .col-auto.d-md-none .navbar-toggler{width:100%;background-position:right center}
+}
+.secondaryNavComp .secondary-nav .right-buttons .btn{font-size:.875rem;padding:.375rem 1rem;justify-content:center}
+.secondaryNavComp .secondary-nav.theme-light .nav .nav-item .nav-link{color:#141414 !important}
+.secondaryNavComp .secondary-nav.theme-dark .nav .nav-item .nav-link{color:#fff !important}
+.secondaryNavComp .secondary-nav.theme-dark .navbar-toggler{filter:invert(1)}
+.secondaryNavComp .secondary-nav.background-white{background-color:#fff}
+.secondaryNavComp .secondary-nav.background-black{background-color:#141414}
+.secondaryNavComp .secondary-nav.background-gray{background-color:#f4f4f2}
+.secondaryNavComp .secondary-nav.background-transparentWithBlur{background-color:rgba(0,0,0,0.7)}
+@media(min-width:576px){.secondaryNavComp .secondary-nav .brand-logo{padding-left:30px;padding-right:30px !important}
+}

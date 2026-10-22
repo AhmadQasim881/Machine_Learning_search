@@ -1,0 +1,2 @@
+// For license information, see `https://assets.adobedtm.com/9273d4aedcd2/0d76ae0322d7/f6753ac2bbcc/RCd2a78ded37b5461993634bd9ad3cf671-source.js`.
+_satellite.__registerScript('https://assets.adobedtm.com/9273d4aedcd2/0d76ae0322d7/f6753ac2bbcc/RCd2a78ded37b5461993634bd9ad3cf671-source.min.js', "<script async src=\"https://august.takingbackjuly.com/i/b05a7b826f9ac070a8f6d891616fb367.js\" data-ch=\"PAN Domain Test 2\" class=\"ct_clicktrue_65330\" datajsonp=\"onCheqResponse\"> </script>");

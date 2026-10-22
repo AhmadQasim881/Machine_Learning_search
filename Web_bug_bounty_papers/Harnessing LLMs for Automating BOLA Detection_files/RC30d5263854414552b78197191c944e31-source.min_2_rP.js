@@ -1,0 +1,2 @@
+// For license information, see `https://assets.adobedtm.com/9273d4aedcd2/0d76ae0322d7/f6753ac2bbcc/RC30d5263854414552b78197191c944e31-source.js`.
+_satellite.__registerScript('https://assets.adobedtm.com/9273d4aedcd2/0d76ae0322d7/f6753ac2bbcc/RC30d5263854414552b78197191c944e31-source.min.js', "<script>\n(function(d,b,a,s,e){ var t = b.createElement(a),\n  fs = b.getElementsByTagName(a)[0]; t.async=1; t.id=e; t.src=s;\n  fs.parentNode.insertBefore(t, fs); })\n(window,document,'script','https://tag.demandbase.com/e78feef73ff94c88.min.js','demandbase_js_lib');  \n</script>");
