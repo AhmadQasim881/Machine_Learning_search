@@ -28,13 +28,16 @@ _SCHEMA = os.path.join(os.path.dirname(__file__), "schema.sql")
 
 
 class Store:
-    def __init__(self, path: str = "campaign.db"):
+    def __init__(self, path: str = "campaign.db", check_same_thread: bool = True):
         self.path = path
         self._commit_depth = 0
         self._dirty = True          # chains need (re)detection (lazy, see memory.chains)
         self._new_cap_nodes: set = set()   # capability nodes changed since last edge rebuild
         self._edges_initialized = False    # first detect does a full ENABLES rebuild
-        self.conn = sqlite3.connect(path)
+        # check_same_thread=False lets a long-lived connection be driven from a
+        # thread pool (e.g. the MCP server's sync-tool offload); callers that do
+        # this MUST serialize access themselves (the MCP server holds a lock).
+        self.conn = sqlite3.connect(path, check_same_thread=check_same_thread)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=NORMAL")   # WAL-safe, far fewer fsyncs

@@ -218,7 +218,11 @@ def _narrate(store: Store, path: list[int], goal: str, nodes: dict, profile=None
 # --- backward chaining: what probe would complete a chain? ----------------- #
 def next_probes(store: Store, profile=None) -> list[dict]:
     """Goal-directed suggestions: for each escalation rule not yet fully reached,
-    report the missing capability token(s) — the agent's next-best probe."""
+    report the missing capability token(s) — the agent's next-best probe. A profile
+    may override this with a domain-specific probe generator (e.g. CODEREVIEW reports
+    the data-flow gap to trace next instead of the generic goal enumeration)."""
+    if profile is not None and getattr(profile, "probes", None) is not None:
+        return profile.probes(store)
     nodes = _chain_nodes(store)
     avail = list(_base_available(store))
     for n in nodes:

@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 from . import canonical as C
+from . import capabilities as caps
 from . import config
 
 
@@ -30,6 +31,7 @@ class Profile:
     escalation_rules: list  # [{goal, need:[(token, attrs)]}]
     goal_severity: dict     # goal -> int
     label: Optional[Callable] = None   # (attrs, node_type) -> str
+    probes: Optional[Callable] = None  # (store) -> list[dict]; overrides generic next_probes
 
     def label_for(self, attrs: dict, node_type: str) -> str:
         if self.label:
@@ -64,15 +66,33 @@ WEB = Profile(
 # A sanitizer that cleans a var simply does not re-provide its taint (breaking
 # the chain). Goals map from the sink kind (sql->full_db_read, exec->rce, ...).
 
+# sink kind -> the goal capability it yields when reached by tainted data.
 _SINK_GOAL = {
-    "sql": "full_db_read", "exec": "rce", "command": "rce", "eval": "rce",
-    "deserialize": "rce", "ssrf": "ssrf_exec", "path": "file_read",
-    "xss": "xss_exec", "ldap": "injection", "generic": "injection",
+    # code execution
+    "exec": "rce", "command": "rce", "eval": "rce", "deserialize": "rce",
+    "template": "rce",                  # server-side template injection
+    "pickle": "rce",
+    # databases
+    "sql": "full_db_read", "nosql": "full_db_read",
+    # filesystem
+    "path": "file_read", "file_read": "file_read", "file_write": "file_write",
+    "xxe": "file_read",
+    # network / web
+    "ssrf": "ssrf_exec", "open_redirect": "open_redirect", "xss": "xss_exec",
+    # other injection
+    "ldap": "injection", "log": "injection", "header": "injection",
+    # memory safety (C/C++/native)
+    "format_string": "memory_corruption", "buffer": "memory_corruption",
+    "integer_overflow": "memory_corruption",
+    # crypto / auth
+    "crypto": "weak_crypto", "auth": "auth_bypass",
+    "generic": "injection",
 }
 
 _CR_GOAL_SEVERITY = {
-    "rce": 10, "full_db_read": 9, "ssrf_exec": 7, "file_read": 7,
-    "xss_exec": 6, "injection": 6,
+    "rce": 10, "memory_corruption": 9, "full_db_read": 9, "file_write": 8,
+    "auth_bypass": 8, "ssrf_exec": 7, "file_read": 7, "xss_exec": 6,
+    "injection": 6, "open_redirect": 5, "weak_crypto": 5,
 }
 
 
@@ -110,20 +130,90 @@ def _cr_label(attrs: dict, node_type: str) -> str:
     return f"{kind}({sym})" + (f" @ {loc}" if loc else "")
 
 
+def _cr_probes(store) -> list:
+    """Taint-specific next probes. The generic goal-escalation enumeration is
+    meaningless for taint (every goal that no sink has reached shows up as 'obtain
+    X'). What a reviewer actually needs is the data-flow GAP to trace next:
+
+      * DANGLING SINK  — a sink consumes a value with no recorded tainted origin:
+        trace backward (highest value: the sink is where damage lands).
+      * DANGLING SOURCE — untrusted input not yet traced to any sink: trace forward.
+      * ORPHAN FLOW    — a propagator whose input has no tainted origin yet.
+
+    Computed from the provides/requires tables directly (always current — set at
+    write time), so it does not depend on a chain-detection pass having run."""
+    nodes, all_provided, all_required = [], [], []
+    for row in store.nodes_by_type("finding"):
+        a = store.node_attrs(row["id"])
+        kind = a.get("kind", "")
+        if not kind.startswith("taint_"):
+            continue
+        prov, req = store.get_provides(row["id"]), store.get_requires(row["id"])
+        all_provided.extend(prov)
+        all_required.extend(req)
+        nodes.append((kind, a, prov, req))
+
+    out = []
+    for kind, a, prov, req in nodes:
+        loc = f"{a.get('file', '?')}:{a.get('line', 0)}"
+        var = a.get("var") or a.get("var_in") or "?"
+        if kind == "taint_sink":
+            if not any(caps.any_unifies(all_provided, r) for r in req):
+                st = a.get("sink_type", "generic")
+                goal = _SINK_GOAL.get(st, "injection")
+                out.append({
+                    "goal": goal, "severity": _CR_GOAL_SEVERITY.get(goal, 6),
+                    "missing_capability": f"tainted origin of '{var}'",
+                    "constraints": {"file": a.get("file", ""), "line": a.get("line", 0),
+                                    "var": var, "sink_type": st},
+                    "suggestion": (f"DANGLING SINK: {st} sink at {loc} consumes '{var}', but no "
+                                   f"tainted origin for '{var}' is recorded. Trace '{var}' backward: "
+                                   f"if it derives from untrusted input, record the source + each flow "
+                                   f"(this would complete a {goal} chain)."),
+                })
+        elif kind == "taint_source":
+            if not any(caps.unify(p, r) for p in prov for r in all_required):
+                out.append({
+                    "goal": "trace_forward", "severity": 5,
+                    "missing_capability": f"a flow/sink consuming tainted '{var}'",
+                    "constraints": {"file": a.get("file", ""), "line": a.get("line", 0), "var": var},
+                    "suggestion": (f"DANGLING SOURCE: untrusted '{var}' enters at {loc} but is not yet "
+                                   f"traced to any sink. Follow where '{var}' flows (assignments, "
+                                   f"calls, concatenations) and record each flow, then the sink it reaches."),
+                })
+        elif kind == "taint_prop":
+            if not any(caps.any_unifies(all_provided, r) for r in req):
+                out.append({
+                    "goal": "trace_backward", "severity": 4,
+                    "missing_capability": f"tainted origin of '{var}'",
+                    "constraints": {"file": a.get("file", ""), "line": a.get("line", 0), "var": var},
+                    "suggestion": (f"ORPHAN FLOW: the flow at {loc} carries '{var}', but nothing yet "
+                                   f"produces tainted '{var}'. Trace '{var}' back to its origin."),
+                })
+    out.sort(key=lambda d: d["severity"], reverse=True)
+    return out
+
+
 CODEREVIEW = Profile(
     name="codereview",
     provides={
         "taint_source": _cr_provides_source,
         "taint_prop": _cr_provides_prop,
         "taint_sink": _cr_provides_sink,
+        # a sanitizer is INERT in the engine: it provides no taint token, so a
+        # cleaned value simply does not propagate (the correct, negation-free way
+        # to break a chain). Recorded only for the portrait / audit trail.
+        "taint_sanitizer": lambda a: [],
     },
     requires={
         "taint_prop": _cr_requires_prop,
         "taint_sink": _cr_requires_sink,
+        "taint_sanitizer": lambda a: [],
     },
     escalation_rules=_CR_ESCALATION,
     goal_severity=_CR_GOAL_SEVERITY,
     label=_cr_label,
+    probes=_cr_probes,
 )
 
 

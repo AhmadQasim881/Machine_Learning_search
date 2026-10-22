@@ -15,6 +15,12 @@ license = { text = "MIT" }
 # additive upgrades (the core does not need these)
 embeddings = ["sentence-transformers>=2.2"]
 graph = ["networkx>=3.0"]
+# MCP server for Claude Desktop / Claude Code (needs Python >= 3.10). The server
+# code supports both the v2 (MCPServer) and v1 (FastMCP) SDK via an import shim.
+mcp = ["mcp>=2,<3"]
+
+[project.scripts]
+agentmem-mcp = "agentmem.mcp_server:main"
 
 [tool.setuptools.packages.find]
 include = ["agentmem*"]

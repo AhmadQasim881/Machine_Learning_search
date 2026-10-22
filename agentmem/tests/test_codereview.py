@@ -55,6 +55,86 @@ class TestTaintChains(_CR):
         self.assertIn("FULL_DB_READ", narr)
 
 
+class TestExtendedSinkGoals(_CR):
+    def test_sink_types_map_to_expected_goals(self):
+        cases = {
+            "exec": "rce", "eval": "rce", "deserialize": "rce", "template": "rce",
+            "pickle": "rce", "command": "rce",
+            "sql": "full_db_read", "nosql": "full_db_read",
+            "path": "file_read", "file_write": "file_write", "xxe": "file_read",
+            "ssrf": "ssrf_exec", "open_redirect": "open_redirect", "xss": "xss_exec",
+            "ldap": "injection", "format_string": "memory_corruption",
+            "buffer": "memory_corruption", "crypto": "weak_crypto", "auth": "auth_bypass",
+        }
+        for i, st in enumerate(cases):                      # each pair chains on its own var
+            v = f"v{i}"
+            self.m.add_taint_source("src.py", var=v, line=i)
+            self.m.add_taint_sink("sink.py", var=v, sink_type=st, line=100 + i)
+        goals = self._goals()
+        for st, goal in cases.items():
+            self.assertIn(goal, goals, f"{st} should yield {goal}")
+
+    def test_unknown_sink_type_falls_back_to_injection(self):
+        self.m.add_taint_source("s.py", var="x", line=1)
+        self.m.add_taint_sink("k.py", var="x", sink_type="totally_unknown", line=2)
+        self.assertIn("injection", self._goals())
+
+
+class TestInterproceduralChain(_CR):
+    def test_multi_hop_flow_across_files(self):
+        # untrusted -> helper -> formatter -> shell, three propagators across 4 files
+        self.m.add_taint_source("api/handler.py", var="p0", symbol="handle", line=10)
+        self.m.add_taint_prop("api/handler.py", var_in="p0", var_out="p1", symbol="handle", line=11)
+        self.m.add_taint_prop("lib/util.py", var_in="p1", var_out="p2", symbol="build", line=5)
+        self.m.add_taint_prop("lib/fmt.py", var_in="p2", var_out="p3", symbol="fmt", line=8)
+        self.m.add_taint_sink("lib/sh.py", var="p3", sink_type="command", symbol="popen", line=3)
+        rce = [c for c in self.m.chains() if c["goal"] == "rce"]
+        self.assertTrue(rce, "a cross-file command-injection chain should be found")
+        self.assertEqual(len(rce[0]["steps"]), 5)           # source + 3 props + sink
+
+
+class TestExplicitSanitizer(_CR):
+    def test_add_taint_sanitizer_is_inert(self):
+        # an explicit sanitizer node provides/requires nothing -> no chain, no crash
+        self.m.add_taint_source("h.py", var="x", line=1)
+        self.m.add_taint_sanitizer("h.py", var="x", symbol="escape", line=2)
+        self.m.add_taint_sink("db.py", var="y", sink_type="sql", line=3)   # y never tainted
+        self.assertEqual(self._goals(), set())
+
+    def test_sanitizer_is_not_a_chain_step(self):
+        self.m.add_taint_source("h.py", var="x", line=1)
+        self.m.add_taint_sink("db.py", var="x", sink_type="sql", line=3)
+        sid = self.m.add_taint_sanitizer("h.py", var="x", symbol="escape", line=2)
+        steps = {s["node_id"] for c in self.m.chains() for s in c["steps"]}
+        self.assertNotIn(sid, steps)
+
+
+class TestTaintProbes(_CR):
+    def test_dangling_sink_probes_backward(self):
+        self.m.add_taint_sink("w/run.py", var="cmd", sink_type="exec", line=7)
+        probes = self.m.next_probes()
+        self.assertEqual(len(probes), 1)
+        self.assertEqual(probes[0]["goal"], "rce")
+        self.assertIn("DANGLING SINK", probes[0]["suggestion"])
+
+    def test_dangling_source_probes_forward(self):
+        self.m.add_taint_source("a/login.py", var="token", line=3)
+        probes = self.m.next_probes()
+        self.assertEqual(len(probes), 1)
+        self.assertEqual(probes[0]["goal"], "trace_forward")
+
+    def test_complete_chain_yields_no_probes(self):
+        self.m.add_taint_source("h.py", var="name", line=1)
+        self.m.add_taint_prop("h.py", var_in="name", var_out="q", line=2)
+        self.m.add_taint_sink("db.py", var="q", sink_type="sql", line=9)
+        self.assertEqual(self.m.next_probes(), [])
+
+    def test_probes_rank_dangerous_sink_first(self):
+        self.m.add_taint_source("a.py", var="s", line=1)                   # dangling source (sev 5)
+        self.m.add_taint_sink("b.py", var="k", sink_type="exec", line=2)   # dangling sink  (sev 10)
+        self.assertEqual(self.m.next_probes()[0]["goal"], "rce")           # highest severity first
+
+
 class TestEngineSharedWithWeb(unittest.TestCase):
     def test_default_profile_is_web_and_unaffected(self):
         with tempfile.TemporaryDirectory() as d:

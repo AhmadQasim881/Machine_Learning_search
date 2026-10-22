@@ -34,12 +34,15 @@ from .working import WorkingMemory
 
 
 class Memory:
-    def __init__(self, path: str = "campaign.db", profile=None, embeddings: bool = False):
+    def __init__(self, path: str = "campaign.db", profile=None, embeddings: bool = False,
+                 check_same_thread: bool = True):
         """`profile` selects the domain ontology (default: web bug-bounty). Pass
         `agentmem.profiles.CODEREVIEW` (or a custom Profile) to retarget the same
         engine to another domain. `embeddings=True` enables the dependency-free
-        semantic retriever + SAME_AS synonym edges (or pass an EmbeddingProvider)."""
-        self.store = Store(path)
+        semantic retriever + SAME_AS synonym edges (or pass an EmbeddingProvider).
+        `check_same_thread=False` allows a single instance to be shared across a
+        thread pool when the caller serializes access (see agentmem.mcp_server)."""
+        self.store = Store(path, check_same_thread=check_same_thread)
         self.vault = SecretsVault(self.store)
         self.working = WorkingMemory(self.store, vault=self.vault)
         self.profile = profile or profiles.WEB
@@ -139,6 +142,16 @@ class Memory:
                               "symbol": symbol, "line": line},
                              confirmed=confirmed, oracle=oracle, severity=severity)
 
+    def add_taint_sanitizer(self, file: str, var: str, symbol: str = "", line: int = 0,
+                            confirmed: bool = True, oracle: str = "sanitizer") -> int:
+        """Record a sanitizer (documentation only — it breaks a chain by the
+        ABSENCE of a propagator for the cleaned value, so do NOT also record a
+        taint_prop for a value that this sanitizer cleans)."""
+        key = profiles.cr_key("taint_sanitizer", file, symbol, var, line)
+        return self.add_fact("taint_sanitizer", key,
+                             {"file": file, "var": var, "symbol": symbol, "line": line},
+                             confirmed=confirmed, oracle=oracle)
+
     def add_technique_rule(self, name: str, provides: list, requires: list,
                            confirmed: bool = True, attrs: Optional[dict] = None) -> int:
         return write.add_technique_rule(self.store, name, provides, requires, confirmed, attrs)
@@ -180,7 +193,7 @@ class Memory:
             for cs in self.store.chain_steps(c["id"]):
                 a = self.store.node_attrs(cs["node_id"])
                 steps.append({"node_id": cs["node_id"],
-                              "label": a.get("vuln_class") or a.get("name") or "node",
+                              "label": self.profile.label_for(a, "node"),
                               "host": a.get("host", ""), "path": a.get("path", "")})
             out.append({"id": c["id"], "goal": c["goal"], "severity": c["severity"],
                         "score": c["score"], "status": c["status"],
@@ -258,7 +271,9 @@ class Memory:
             lines.append("\n## Confirmed findings (pinned)")
             for p in hot:
                 a = p["attrs"]
-                lines.append(f"- {a.get('vuln_class', '?')} @ {a.get('host', '')}{a.get('path', '')}")
+                loc = f" @ {a.get('host', '')}{a.get('path', '')}".rstrip() \
+                    if (a.get("host") or a.get("path")) else ""
+                lines.append(f"- {self.profile.label_for(a, p['type'])}{loc}")
         text = self.redact("\n".join(lines))     # never leak raw secrets into a prompt
         if len(text) > budget_chars:
             text = text[:budget_chars - 3] + "..."

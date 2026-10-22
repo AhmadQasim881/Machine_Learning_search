@@ -38,7 +38,7 @@ dissimilar* facts — which is exactly what finds chains.
 
 ```bash
 cd agentmem
-python -m unittest discover -s tests        # 43 tests, stdlib only
+python -m unittest discover -s tests        # 52 tests, stdlib only
 python examples/demo.py                      # web: 3 worked exploit-chain examples
 python examples/codereview_demo.py           # code-review: taint-flow chains, SAME engine
 ```
@@ -65,6 +65,33 @@ m.reflect(); m.close()                         # pin verified assets, persist
 
 After a restart, `Memory("campaign.db").rehydrate()` reloads the working set
 (targets, pinned findings/credentials, discovered chains, next-probe queue).
+
+---
+
+## Use it from Claude Desktop / Claude Code (MCP)
+
+agentmem ships an **MCP server** so Claude can use it as persistent memory for
+**long-horizon source-code security review** (and web triage). Claude records taint
+facts as it reads code; the engine connects them into `source → … → sink` chains;
+everything persists in one SQLite file, so the model's context stays small while
+memory grows **across files and across sessions** — exactly what reviewing a repo
+far larger than a context window (a messenger, a server) needs.
+
+```bash
+cd agentmem && pip install -e ".[mcp]"          # installs the MCP SDK (v2 or v1)
+
+# register with Claude Code, one DB per repo, taint profile:
+claude mcp add --env AGENTMEM_DB=/abs/path/telegram.db --env AGENTMEM_PROFILE=codereview \
+  --transport stdio agentmem -- /abs/path/agentmem/.venv/bin/python -m agentmem.mcp_server
+```
+
+Tools Claude sees: `get_context` (reload what memory knows), `record_source/flow/
+sink/sanitizer`, `get_chains` (the discovered data-flow chains = the finding list),
+`next_probes` (the gap to trace next — a dangling sink/source), `recall`, `reflect`,
+`invalidate`, `stats`. The **review method** is in
+`skills/code-review/SKILL.md` (a Claude Code skill, or paste into Claude Desktop
+project instructions). Full setup — Claude Desktop config, CLI commands, env vars,
+gotchas, smoke test — in **`docs/CODE_REVIEW_INTEGRATION.md`**.
 
 ---
 
@@ -126,7 +153,10 @@ agentmem/
   profiles.py       DOMAIN profiles over the one engine (WEB, CODEREVIEW, custom)
   reflect.py        consolidation: hypothesis nodes, portrait summaries, SAME_AS
   embeddings.py     optional semantic vectors (dependency-free hashing fallback)
-tests/              stdlib unittest (43 tests; web chains + code-review taint chains)
+  mcp_server.py     MCP server (Claude Desktop / Claude Code) exposing the facade
+skills/code-review/SKILL.md   the memory-driven code-review method for Claude
+docs/CODE_REVIEW_INTEGRATION.md  setup for Claude Desktop + Claude Code CLI
+tests/              stdlib unittest (52 tests; web chains + code-review taint chains)
 examples/demo.py              web exploit-chain demo
 examples/codereview_demo.py   code-review taint-chain demo (same engine)
 ```
