@@ -38,7 +38,7 @@ dissimilar* facts — which is exactly what finds chains.
 
 ```bash
 cd agentmem
-python -m unittest discover -s tests        # 37 tests, stdlib only
+python -m unittest discover -s tests        # 43 tests, stdlib only
 python examples/demo.py                      # web: 3 worked exploit-chain examples
 python examples/codereview_demo.py           # code-review: taint-flow chains, SAME engine
 ```
@@ -124,7 +124,9 @@ agentmem/
   working.py        persisted working set + rehydrate()
   memory.py         Memory facade — the only API the agent uses
   profiles.py       DOMAIN profiles over the one engine (WEB, CODEREVIEW, custom)
-tests/              stdlib unittest (37 tests; web chains + code-review taint chains)
+  reflect.py        consolidation: hypothesis nodes, portrait summaries, SAME_AS
+  embeddings.py     optional semantic vectors (dependency-free hashing fallback)
+tests/              stdlib unittest (43 tests; web chains + code-review taint chains)
 examples/demo.py              web exploit-chain demo
 examples/codereview_demo.py   code-review taint-chain demo (same engine)
 ```
@@ -191,15 +193,29 @@ A verified review pass fixed real correctness bugs and added robustness:
 - **Integration** — `Memory.context()` renders a token-budgeted, **secret-redacted**
   memory block for an LLM prompt; `stats()`, `get_secret()`, `redact()` added.
 
-## Deferred backlog (planned, not yet built)
+## Backlog pass (applied)
 
-Node-level provenance → full consensus promotion (N-consistent); persisted
-Hypothesis nodes for the next-probe queue; per-target "portrait" summaries;
-embedding-based semantic recall + RRF fusion + `SAME_AS` synonym edges; and
-incremental (per-node) chain detection.
+The previously-deferred items are now built and tested:
+- **Consensus promotion + provenance** — observations attach to a finding
+  (`obs_id`); `CONSENSUS_N` distinct corroborating observations promote a
+  `suspected` finding to `confirmed` (weaker than an oracle); every node carries
+  its supporting observation ids.
+- **Persisted hypothesis nodes** — the backward-chaining next-probe queue is
+  materialized as `hypothesis` nodes that survive restarts (`rehydrate` step 4)
+  and auto-resolve once a live chain reaches their goal.
+- **Portrait summaries** — a deterministic per-host structured summary (tech,
+  endpoints, confirmed findings, chains), rebuilt on `reflect()`.
+- **Semantic recall** — `Memory(embeddings=True)` enables a dependency-free
+  hashing embedding; `recall(query="…")` fuses exact + graph + semantic via RRF;
+  `reflect()` adds advisory `SAME_AS` synonym edges (never merges nodes).
+- **Incremental chain detection** — ENABLES edges rebuild only for nodes changed
+  since the last pass (full once, then incremental), off the write hot path.
 
-*(Done: the **core + profile** split — a web profile and a source-code-review
-taint-flow profile now run on the same engine; see "Any domain, one engine".)*
+## Still deferred (optional quality upgrades)
+
+LLM-based summarization/narration and a real embedding model
+(sentence-transformers) behind the existing interfaces — both strictly additive;
+the deterministic, dependency-free core already covers every requirement.
 
 ## License
 MIT.

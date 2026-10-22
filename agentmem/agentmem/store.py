@@ -32,6 +32,8 @@ class Store:
         self.path = path
         self._commit_depth = 0
         self._dirty = True          # chains need (re)detection (lazy, see memory.chains)
+        self._new_cap_nodes: set = set()   # capability nodes changed since last edge rebuild
+        self._edges_initialized = False    # first detect does a full ENABLES rebuild
         self.conn = sqlite3.connect(path)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA journal_mode=WAL")
@@ -176,12 +178,35 @@ class Store:
     def pin(self, node_id: int) -> None:
         self.update_node(node_id, pinned=1)
 
+    def add_provenance(self, node_id: int, obs_id: int) -> int:
+        """Record that `obs_id` supports this node; return the count of distinct
+        supporting observations (used for consensus promotion)."""
+        attrs = self.node_attrs(node_id)
+        prov = set(attrs.get("_provenance", []))
+        prov.add(obs_id)
+        self.update_node(node_id, attrs={"_provenance": sorted(prov)})
+        return len(prov)
+
     def touch(self, node_id: int) -> None:
         """Reconsolidation: bump last_access_step and strengthen (MemoryBank)."""
         self.conn.execute(
             "UPDATE nodes SET last_access_step=?, strength=strength+1 WHERE id=?",
             (self.step, node_id))
         self._commit()
+
+    def set_embedding(self, node_id: int, blob: bytes) -> None:
+        self.conn.execute("UPDATE nodes SET embedding=? WHERE id=?", (blob, node_id))
+        self._commit()
+
+    def nodes_with_embeddings(self, type: Optional[str] = None) -> list[sqlite3.Row]:
+        q = ("SELECT id,type,embedding,importance,confidence,pinned,status,"
+             "last_access_step,created_step,attrs_json FROM nodes "
+             "WHERE embedding IS NOT NULL AND status!='invalidated'")
+        args: tuple = ()
+        if type:
+            q += " AND type=?"
+            args = (type,)
+        return self.conn.execute(q, args).fetchall()
 
     def nodes_by_type(self, type: str, include_invalid: bool = False) -> list[sqlite3.Row]:
         q = "SELECT * FROM nodes WHERE type=?"
@@ -231,6 +256,7 @@ class Store:
 
     # ---- capabilities ---------------------------------------------------- #
     def set_capabilities(self, node_id: int, provides: list, requires: list) -> None:
+        self._new_cap_nodes.add(node_id)      # mark for incremental edge rebuild
         self.conn.execute("DELETE FROM provides WHERE node_id=?", (node_id,))
         self.conn.execute("DELETE FROM requires WHERE node_id=?", (node_id,))
         for name, attrs in provides:

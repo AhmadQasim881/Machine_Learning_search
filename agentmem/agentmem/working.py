@@ -41,6 +41,17 @@ class WorkingMemory:
                          "attrs": json.loads(r["attrs_json"])}
                         for r in s.pinned_nodes()]
 
+        # open hypotheses = the persisted next-probe queue (rehydrate step 4)
+        ws["hypotheses"] = [
+            {"id": r["id"], **json.loads(r["attrs_json"])}
+            for r in s.nodes_by_type("hypothesis")
+            if json.loads(r["attrs_json"]).get("state") == "open"]
+
+        # per-host portrait summaries
+        ws["portraits"] = {
+            r["scope_key"]: r["text"] for r in s.conn.execute(
+                "SELECT scope_key,text FROM summaries WHERE scope_type='host' AND level=0").fetchall()}
+
         ws["chains"] = []
         for c in s.chains():
             steps = [cs["node_id"] for cs in s.chain_steps(c["id"])]

@@ -15,8 +15,24 @@ from typing import Optional
 
 from . import canonical as C
 from . import capabilities as caps
+from . import config
 from .security import sanitize, may_seed_chain
 from .store import Store
+
+
+def _record_provenance(store: Store, nid: int, obs_id: Optional[int]) -> None:
+    """Attach an observation to a node and, if enough distinct observations now
+    corroborate a still-suspected finding, promote it by CONSENSUS (weaker than an
+    oracle: confidence CONSENSUS_CONFIDENCE, oracle='consensus')."""
+    if obs_id is None:
+        return
+    count = store.add_provenance(nid, obs_id)
+    node = store.get_node(nid)
+    if node and node["status"] == "suspected" and count >= config.CONSENSUS_N:
+        store.set_status(nid, "confirmed", confidence=config.CONSENSUS_CONFIDENCE)
+        store.update_node(nid, attrs={"oracle": "consensus"})
+        store.pin(nid)
+        store.mark_dirty()
 
 
 def observe(store: Store, request: str, response_meta: str = "",
@@ -61,7 +77,8 @@ def ensure_param(store: Store, host: str, path: str, name: str,
 
 def add_fact(store: Store, kind: str, canonical_key: str, attrs: Optional[dict] = None,
              profile=None, node_type: str = "finding", confirmed: bool = False,
-             oracle: str = "", trust: str = "agent_asserted", severity: int = 5) -> int:
+             oracle: str = "", trust: str = "agent_asserted", severity: int = 5,
+             obs_id: Optional[int] = None) -> int:
     """Domain-agnostic fact ingest: upsert a node, attach the capability tokens the
     active profile derives for `kind`, apply the verification gate, pin if
     confirmed, and mark chains dirty. The web `add_finding` is sugar over this; a
@@ -86,6 +103,7 @@ def add_fact(store: Store, kind: str, canonical_key: str, attrs: Optional[dict] 
         store.add_lesson(nid, "forward", f"{kind} provides " + ", ".join(p[0] for p in prov))
     if status == "confirmed":
         store.pin(nid)
+    _record_provenance(store, nid, obs_id)
     store.mark_dirty()
     return nid
 
@@ -141,6 +159,7 @@ def add_finding(store: Store, vuln_class: str, host: str = "", path: str = "/",
     # pin confirmed findings (never forgotten) and trigger detection
     if status == "confirmed":
         store.pin(fid)
+    _record_provenance(store, fid, obs_id)
     store.mark_dirty()   # lazy: detected on chains()/reflect()
     return fid
 

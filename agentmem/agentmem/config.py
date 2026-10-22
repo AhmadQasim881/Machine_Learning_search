@@ -26,6 +26,15 @@ CHAIN_MAX_DEPTH = 6
 CHAIN_MAX_WIDTH = 64           # frontier cap per expansion
 CHAIN_MIN_CONFIDENCE = 0.05    # prune paths whose running product drops below
 
+# --- consensus promotion (N corroborating observations confirm a finding) --- #
+CONSENSUS_N = 2               # distinct observations needed to confirm without an oracle
+CONSENSUS_CONFIDENCE = 0.7    # weaker than an oracle's 0.9
+
+# --- embeddings / semantic recall (optional; stdlib hashing fallback) ------- #
+EMBED_DIM = 256
+SAME_AS_THRESHOLD = 0.86      # conservative — advisory synonym edge only, never merge
+RRF_K = 60                    # reciprocal-rank-fusion constant
+
 # --- trust levels (AI-Meets-Brain): higher seeds chains at full confidence -- #
 TRUST_RANK = {
     "tool_verified": 3,

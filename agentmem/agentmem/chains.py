@@ -41,40 +41,47 @@ def _chain_nodes(store: Store) -> list:
     return rows
 
 
-def rebuild_enables(store: Store) -> int:
-    """(Re)compute ENABLES edges across all capability-bearing nodes via the
-    provides/requires token index. Returns the number of edges asserted."""
-    nodes = _chain_nodes(store)
-    provides = {n["id"]: store.get_provides(n["id"]) for n in nodes}
-    requires = {n["id"]: store.get_requires(n["id"]) for n in nodes}
-    n_edges = 0
-    for a in nodes:
-        aid = a["id"]
-        if not provides[aid]:
-            continue
-        # candidate targets: nodes that require a token we provide
-        cand: set[int] = set()
-        for name, _ in provides[aid]:
-            cand.update(store.nodes_with_requires_token(name))
-        for bid in cand:
-            if bid == aid:
-                continue
-            # does any provided token satisfy any required token?
-            binding = None
-            for req in requires.get(bid, []):
-                binding = caps.any_unifies(provides[aid], req)
-                if binding is not None:
-                    break
+def rebuild_enables(store: Store, subset: Optional[set] = None) -> int:
+    """(Re)compute ENABLES edges via the provides/requires token index. With
+    `subset` (a set of node ids), only edges touching those nodes are recomputed
+    (incremental) — new-node edges in either direction. ENABLES edges persist and
+    add_edge dedups, so incremental is equivalent to a full rebuild but far cheaper
+    on the write path (spec §4.3). Returns the number of edges asserted."""
+    nodes = {n["id"]: n for n in _chain_nodes(store)}
+    provides = {nid: store.get_provides(nid) for nid in nodes}
+    requires = {nid: store.get_requires(nid) for nid in nodes}
+
+    def try_edge(aid: int, bid: int) -> int:
+        if aid == bid or aid not in nodes or bid not in nodes:
+            return 0
+        binding = None
+        for req in requires.get(bid, []):
+            binding = caps.any_unifies(provides.get(aid, []), req)
             if binding is not None:
-                b = store.get_node(bid)
-                conf = min(a["confidence"], b["confidence"]) or 0.5
-                # a derived edge is only as trusted as its weaker endpoint
-                etrust = (a["trust"] if config.TRUST_RANK.get(a["trust"], 0)
-                          <= config.TRUST_RANK.get(b["trust"], 0) else b["trust"])
-                store.add_edge(aid, bid, "ENABLES", attrs=binding,
-                               confidence=conf, trust=etrust, provenance=[aid, bid])
-                n_edges += 1
-    return n_edges
+                break
+        if binding is None:
+            return 0
+        a, b = nodes[aid], nodes[bid]
+        conf = min(a["confidence"], b["confidence"]) or 0.5
+        etrust = (a["trust"] if config.TRUST_RANK.get(a["trust"], 0)
+                  <= config.TRUST_RANK.get(b["trust"], 0) else b["trust"])
+        store.add_edge(aid, bid, "ENABLES", attrs=binding, confidence=conf,
+                       trust=etrust, provenance=[aid, bid])
+        return 1
+
+    focus = list(nodes) if subset is None else [nid for nid in nodes if nid in subset]
+    n = 0
+    for nid in focus:
+        # edges where `nid` is the SOURCE (it provides -> others require)
+        for name, _ in provides.get(nid, []):
+            for bid in store.nodes_with_requires_token(name):
+                n += try_edge(nid, bid)
+        # edges where `nid` is the TARGET (others provide -> it requires)
+        if subset is not None:
+            for name, _ in requires.get(nid, []):
+                for aid in store.nodes_with_provides_token(name):
+                    n += try_edge(aid, nid)
+    return n
 
 
 def detect(store: Store, profile=None) -> list[int]:
@@ -82,7 +89,13 @@ def detect(store: Store, profile=None) -> list[int]:
     materialize the MINIMAL Chain per goal, and retract chains whose steps were
     invalidated. Returns the chain row ids found/updated. The `profile` supplies
     the escalation rules/goal severities (web vs. code-review vs. ...)."""
-    rebuild_enables(store)
+    # incremental edge rebuild: full once, then only edges touching new cap-nodes
+    if not store._edges_initialized:
+        rebuild_enables(store)
+        store._edges_initialized = True
+    elif store._new_cap_nodes:
+        rebuild_enables(store, subset=set(store._new_cap_nodes))
+    store._new_cap_nodes = set()
     nodes = {n["id"]: n for n in _chain_nodes(store)}
     provides = {nid: store.get_provides(nid) for nid in nodes}
     requires = {nid: store.get_requires(nid) for nid in nodes}

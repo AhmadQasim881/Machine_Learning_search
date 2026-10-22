@@ -23,7 +23,9 @@ from . import chains as chainmod
 from . import forget
 import os
 
+from . import embeddings as emb
 from . import profiles
+from . import reflect as reflectmod
 from . import retrieve
 from . import write
 from .security import SecretsVault
@@ -32,14 +34,32 @@ from .working import WorkingMemory
 
 
 class Memory:
-    def __init__(self, path: str = "campaign.db", profile=None):
+    def __init__(self, path: str = "campaign.db", profile=None, embeddings: bool = False):
         """`profile` selects the domain ontology (default: web bug-bounty). Pass
         `agentmem.profiles.CODEREVIEW` (or a custom Profile) to retarget the same
-        engine to another domain — e.g. source-code taint analysis."""
+        engine to another domain. `embeddings=True` enables the dependency-free
+        semantic retriever + SAME_AS synonym edges (or pass an EmbeddingProvider)."""
         self.store = Store(path)
         self.vault = SecretsVault(self.store)
         self.working = WorkingMemory(self.store, vault=self.vault)
         self.profile = profile or profiles.WEB
+        if embeddings is True:
+            self.embed = emb.HashingProvider()
+        elif embeddings and embeddings is not False:
+            self.embed = embeddings          # a custom EmbeddingProvider
+        else:
+            self.embed = None
+
+    def _embed(self, node_id: int) -> None:
+        if self.embed is None:
+            return
+        node = self.store.get_node(node_id)
+        if not node:
+            return
+        import json as _json
+        vec = self.embed.encode(emb.text_for(_json.loads(node["attrs_json"]), node["type"]))
+        if vec is not None:
+            self.store.set_embedding(node_id, emb.to_blob(vec))
 
     # ---- lifecycle ------------------------------------------------------- #
     def tick(self) -> int:
@@ -74,19 +94,25 @@ class Memory:
     def add_finding(self, vuln_class: str, host: str = "", path: str = "/",
                     param: str = "", confirmed: bool = False, oracle: str = "",
                     attrs: Optional[dict] = None, trust: str = "agent_asserted",
-                    severity: int = 5) -> int:
-        return write.add_finding(self.store, vuln_class, host, path, param,
-                                 confirmed, oracle, attrs, trust, severity=severity,
-                                 profile=self.profile)
+                    severity: int = 5, obs_id: Optional[int] = None) -> int:
+        nid = write.add_finding(self.store, vuln_class, host, path, param,
+                                confirmed, oracle, attrs, trust, obs_id=obs_id,
+                                severity=severity, profile=self.profile)
+        self._embed(nid)
+        return nid
 
     def add_fact(self, kind: str, canonical_key: str, attrs: Optional[dict] = None,
                  node_type: str = "finding", confirmed: bool = False, oracle: str = "",
-                 trust: str = "agent_asserted", severity: int = 5) -> int:
+                 trust: str = "agent_asserted", severity: int = 5,
+                 obs_id: Optional[int] = None) -> int:
         """Domain-agnostic ingest (any profile). `kind` selects the capability
         extractor; `canonical_key` is the dedup identity (build it with the
-        profile's key helper)."""
-        return write.add_fact(self.store, kind, canonical_key, attrs, self.profile,
-                              node_type, confirmed, oracle, trust, severity)
+        profile's key helper). Pass `obs_id` (from observe()) for provenance +
+        consensus promotion."""
+        nid = write.add_fact(self.store, kind, canonical_key, attrs, self.profile,
+                             node_type, confirmed, oracle, trust, severity, obs_id)
+        self._embed(nid)
+        return nid
 
     # ---- code-review (taint) sugar — only meaningful under CODEREVIEW -------- #
     def add_taint_source(self, file: str, var: str, symbol: str = "", line: int = 0,
@@ -133,9 +159,12 @@ class Memory:
     # ---- read ------------------------------------------------------------ #
     def recall(self, type: Optional[str] = None, host: Optional[str] = None,
                vuln_class: Optional[str] = None, limit: int = 20,
-               seed_node: Optional[int] = None) -> list[dict]:
+               seed_node: Optional[int] = None, query: Optional[str] = None) -> list[dict]:
+        """Hybrid recall. Pass a free-text `query` for semantic matching when the
+        memory was created with embeddings=True."""
         return retrieve.recall(self.store, type=type, host=host, vuln_class=vuln_class,
-                               limit=limit, seed_node=seed_node)
+                               limit=limit, seed_node=seed_node, query=query,
+                               provider=self.embed)
 
     def chains(self, include_invalidated: bool = False) -> list[dict]:
         """Discovered exploit chains, highest severity first, with cited steps.
@@ -170,12 +199,17 @@ class Memory:
         forget.soft_invalidate(self.store, node_id, reason)
 
     def reflect(self) -> dict:
-        """Consolidation pass: pin verified assets (never-forget) + a full chain
-        re-detect. (LLM summarization/insight curation plug in here when configured.)"""
+        """Consolidation pass: full chain re-detect, pin verified assets
+        (never-forget), persist the next-probe queue as hypothesis nodes, and
+        rebuild per-host portrait summaries. All deterministic (no LLM)."""
         self.store.take_dirty()          # we are about to run a full detect
-        pinned = forget.auto_pin(self.store)
         chainmod.detect(self.store, self.profile)
-        return {"pinned": pinned, "chains": len(self.store.chains())}
+        pinned = forget.auto_pin(self.store)
+        hyps = reflectmod.materialize_hypotheses(self.store, self.profile)
+        portraits = reflectmod.build_portraits(self.store, self.profile)
+        synonyms = reflectmod.link_synonyms(self.store) if self.embed else 0
+        return {"pinned": pinned, "chains": len(self.store.chains()),
+                "hypotheses": hyps, "portraits": portraits, "synonyms": synonyms}
 
     def get_secret(self, handle: str):
         """Resolve a credential value from the vault by handle (use sparingly)."""
