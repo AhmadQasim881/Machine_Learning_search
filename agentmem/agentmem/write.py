@@ -15,7 +15,6 @@ from typing import Optional
 
 from . import canonical as C
 from . import capabilities as caps
-from . import chains as chainmod
 from .security import sanitize, may_seed_chain
 from .store import Store
 
@@ -74,16 +73,22 @@ def add_finding(store: Store, vuln_class: str, host: str = "", path: str = "/",
         attrs.setdefault("param", C.norm_param(param))
     attrs["vuln_class"] = vuln_class
     if oracle:
-        attrs["oracle"] = oracle
+        attrs["oracle"] = sanitize(oracle, 500)
+    # attr values may be copied from target text — sanitize before storing, since
+    # they surface into the working set / prompt context later.
+    attrs = {k: (sanitize(v, 2000) if isinstance(v, str) else v) for k, v in attrs.items()}
 
-    status = "confirmed" if (confirmed and oracle) else "suspected"
+    # VERIFICATION GATE: confirmed only with an oracle AND from a trusted source
+    # (target-derived text can never promote a finding to confirmed).
+    status = "confirmed" if (confirmed and oracle and may_seed_chain(trust)) else "suspected"
     confidence = 0.9 if status == "confirmed" else 0.35
     if not may_seed_chain(trust):
         confidence = min(confidence, 0.3)   # target-derived never seeds at full confidence
 
     fid = store.upsert_node(
         "finding", C.finding_key(vuln_class, host, path, param), attrs,
-        importance=max(5, severity), confidence=confidence, trust=trust, status=status)
+        importance=max(5, severity), confidence=confidence, trust=trust, status=status,
+        allow_revive=(status == "confirmed"))   # a re-observation with an oracle can revive
 
     # structural links to endpoint/param (provenance)
     if host:
@@ -105,7 +110,7 @@ def add_finding(store: Store, vuln_class: str, host: str = "", path: str = "/",
     # pin confirmed findings (never forgotten) and trigger detection
     if status == "confirmed":
         store.pin(fid)
-    chainmod.detect(store)
+    store.mark_dirty()   # lazy: detected on chains()/reflect()
     return fid
 
 
@@ -137,7 +142,7 @@ def add_credential(store: Store, vault, kind: str, subject: str, value: str = ""
     tokens = provides_tokens or [("session_token", {"subject": subject})]
     store.set_capabilities(nid, tokens, [])
     store.pin(nid)
-    chainmod.detect(store)
+    store.mark_dirty()   # lazy: detected on chains()/reflect()
     return nid, handle
 
 

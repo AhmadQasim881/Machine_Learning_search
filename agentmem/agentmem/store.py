@@ -15,9 +15,14 @@ import json
 import os
 import sqlite3
 import time
+from contextlib import contextmanager
 from typing import Any, Iterable, Optional
 
 from . import capabilities as caps
+from . import config
+
+# status reconciliation ranks (invalidated is special — see upsert_node)
+_STATUS_RANK = {"invalidated": 0, "suspected": 1, "confirmed": 2}
 
 _SCHEMA = os.path.join(os.path.dirname(__file__), "schema.sql")
 
@@ -25,18 +30,46 @@ _SCHEMA = os.path.join(os.path.dirname(__file__), "schema.sql")
 class Store:
     def __init__(self, path: str = "campaign.db"):
         self.path = path
+        self._commit_depth = 0
+        self._dirty = True          # chains need (re)detection (lazy, see memory.chains)
         self.conn = sqlite3.connect(path)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn.execute("PRAGMA synchronous=NORMAL")   # WAL-safe, far fewer fsyncs
         self.conn.execute("PRAGMA foreign_keys=ON")
         with open(_SCHEMA, encoding="utf-8") as fh:
             self.conn.executescript(fh.read())
         if self._meta("step") is None:
             self._set_meta("step", "0")
-        self.conn.commit()
+        self._commit()
 
     def close(self) -> None:
         self.conn.close()
+
+    # ---- commit control / batching -------------------------------------- #
+    def _commit(self) -> None:
+        if self._commit_depth == 0:
+            self.conn.commit()
+
+    @contextmanager
+    def transaction(self):
+        """Defer commits until the block exits — one fsync for a bulk write."""
+        self._commit_depth += 1
+        try:
+            yield self
+        finally:
+            self._commit_depth -= 1
+            if self._commit_depth == 0:
+                self._commit()
+
+    # ---- chain-detection dirty flag (lazy detection; see memory.chains) --- #
+    def mark_dirty(self) -> None:
+        self._dirty = True
+
+    def take_dirty(self) -> bool:
+        d = self._dirty
+        self._dirty = False
+        return d
 
     def __enter__(self) -> "Store":
         return self
@@ -61,17 +94,20 @@ class Store:
     def tick(self) -> int:
         s = self.step + 1
         self._set_meta("step", str(s))
-        self.conn.commit()
+        self._commit()
         return s
 
     # ---- nodes ----------------------------------------------------------- #
     def upsert_node(self, type: str, canonical_key: str, attrs: Optional[dict] = None,
                     importance: int = 5, confidence: float = 0.5,
                     trust: str = "agent_asserted", status: str = "suspected",
-                    pinned: bool = False) -> int:
+                    pinned: bool = False, allow_revive: bool = False) -> int:
         """Insert or merge a node by (type, canonical_key). On conflict, attrs are
-        shallow-merged and importance/confidence raised (monotonic), never lowered
-        silently — ground truth is not downgraded by a later weak observation."""
+        shallow-merged, importance/confidence raised monotonically, and — the fix —
+        STATUS and TRUST are reconciled upward too: a later confirmed observation
+        promotes a stored 'suspected' node, and trust rises to the stronger source.
+        An 'invalidated' node stays invalidated unless allow_revive AND the new
+        status is 'confirmed' (a re-observation that fired an oracle)."""
         now = time.time()
         step = self.step
         existing = self.find_node(type, canonical_key)
@@ -82,15 +118,29 @@ class Store:
                 "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                 (type, canonical_key, json.dumps(attrs or {}), importance, confidence,
                  trust, status, int(pinned), step, now, step))
-            self.conn.commit()
+            self._commit()
             return cur.lastrowid
         nid = existing["id"]
         merged = {**json.loads(existing["attrs_json"] or "{}"), **(attrs or {})}
+
+        # status reconciliation (monotonic promotion; invalidated is sticky)
+        old_status = existing["status"]
+        if old_status == "invalidated" and not (allow_revive and status == "confirmed"):
+            new_status = "invalidated"
+        elif _STATUS_RANK.get(status, 1) > _STATUS_RANK.get(old_status, 1):
+            new_status = status
+        else:
+            new_status = old_status
+
+        # trust rises to the stronger source
+        old_trust = existing["trust"]
+        new_trust = trust if config.TRUST_RANK.get(trust, 0) > config.TRUST_RANK.get(old_trust, 0) else old_trust
+
         self.conn.execute(
             "UPDATE nodes SET attrs_json=?, importance=MAX(importance,?), "
-            "confidence=MAX(confidence,?), last_access_step=? WHERE id=?",
-            (json.dumps(merged), importance, confidence, step, nid))
-        self.conn.commit()
+            "confidence=MAX(confidence,?), status=?, trust=?, last_access_step=? WHERE id=?",
+            (json.dumps(merged), importance, confidence, new_status, new_trust, step, nid))
+        self._commit()
         return nid
 
     def find_node(self, type: str, canonical_key: str) -> Optional[sqlite3.Row]:
@@ -115,7 +165,7 @@ class Store:
         cols = ", ".join(f"{k}=?" for k in fields)
         self.conn.execute(f"UPDATE nodes SET {cols} WHERE id=?",
                           (*fields.values(), node_id))
-        self.conn.commit()
+        self._commit()
 
     def set_status(self, node_id: int, status: str, confidence: Optional[float] = None) -> None:
         if confidence is None:
@@ -131,7 +181,7 @@ class Store:
         self.conn.execute(
             "UPDATE nodes SET last_access_step=?, strength=strength+1 WHERE id=?",
             (self.step, node_id))
-        self.conn.commit()
+        self._commit()
 
     def nodes_by_type(self, type: str, include_invalid: bool = False) -> list[sqlite3.Row]:
         q = "SELECT * FROM nodes WHERE type=?"
@@ -155,14 +205,14 @@ class Store:
             self.conn.execute(
                 "UPDATE edges SET confidence=MAX(confidence,?), attrs_json=? WHERE id=?",
                 (confidence, json.dumps(attrs or {}), existing["id"]))
-            self.conn.commit()
+            self._commit()
             return existing["id"]
         cur = self.conn.execute(
             "INSERT INTO edges(src_id,dst_id,rel_type,attrs_json,weight,confidence,"
             "trust,created_step,valid_from,provenance) VALUES(?,?,?,?,?,?,?,?,?,?)",
             (src_id, dst_id, rel_type, json.dumps(attrs or {}), weight, confidence,
              trust, self.step, self.step, json.dumps(provenance or [])))
-        self.conn.commit()
+        self._commit()
         return cur.lastrowid
 
     def edges_from(self, src_id: int, rel_type: Optional[str] = None) -> list[sqlite3.Row]:
@@ -191,7 +241,7 @@ class Store:
             self.conn.execute(
                 "INSERT OR IGNORE INTO requires(node_id,token,attrs_json) VALUES(?,?,?)",
                 (node_id, name, caps.dump_attrs(attrs)))
-        self.conn.commit()
+        self._commit()
 
     def get_provides(self, node_id: int) -> list:
         rows = self.conn.execute(
@@ -220,7 +270,7 @@ class Store:
             "INSERT INTO observations(step,ts,request,response_meta,blob_ref,trust,source) "
             "VALUES(?,?,?,?,?,?,?)",
             (self.step, time.time(), request, response_meta, blob_ref, trust, source))
-        self.conn.commit()
+        self._commit()
         return cur.lastrowid
 
     def add_payload(self, node_id: Optional[int], endpoint_id: Optional[int],
@@ -231,7 +281,7 @@ class Store:
             "success,obs_id,step) VALUES(?,?,?,?,?,?,?,?,?)",
             (node_id, endpoint_id, param_id, template, value, outcome,
              int(success), obs_id, self.step))
-        self.conn.commit()
+        self._commit()
         return cur.lastrowid
 
     def payloads_for(self, endpoint_id: int, param_id: Optional[int] = None) -> list[sqlite3.Row]:
@@ -247,7 +297,7 @@ class Store:
         cur = self.conn.execute(
             "INSERT INTO lessons(node_id,kind,text,step) VALUES(?,?,?,?)",
             (node_id, kind, text, self.step))
-        self.conn.commit()
+        self._commit()
         return cur.lastrowid
 
     def lessons_for(self, node_id: int) -> list[sqlite3.Row]:
@@ -259,7 +309,7 @@ class Store:
             "INSERT INTO summaries(scope_type,scope_key,level,text,step) VALUES(?,?,?,?,?) "
             "ON CONFLICT(scope_type,scope_key,level) DO UPDATE SET text=excluded.text, step=excluded.step",
             (scope_type, scope_key, level, text, self.step))
-        self.conn.commit()
+        self._commit()
 
     # ---- chains ---------------------------------------------------------- #
     def upsert_chain(self, goal: str, score: float, severity: int, status: str,
@@ -282,7 +332,7 @@ class Store:
                 self.conn.execute(
                     "INSERT OR REPLACE INTO chain_steps(chain_id,ord,node_id,edge_id) VALUES(?,?,?,?)",
                     (cid, ordi, nid, eid))
-        self.conn.commit()
+        self._commit()
         return cid
 
     def chains(self) -> list[sqlite3.Row]:
@@ -299,7 +349,7 @@ class Store:
             "INSERT INTO working_set(key,value_json,updated_step) VALUES(?,?,?) "
             "ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json, updated_step=excluded.updated_step",
             (key, json.dumps(value), self.step))
-        self.conn.commit()
+        self._commit()
 
     def get_working(self, key: str, default=None):
         r = self.conn.execute("SELECT value_json FROM working_set WHERE key=?", (key,)).fetchone()

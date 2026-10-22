@@ -16,8 +16,9 @@ from .store import Store
 
 
 class WorkingMemory:
-    def __init__(self, store: Store):
+    def __init__(self, store: Store, vault=None):
         self.store = store
+        self.vault = vault      # when set, rehydrated observation text is redacted
 
     def set(self, key: str, value: Any) -> None:
         self.store.set_working(key, value)
@@ -47,8 +48,10 @@ class WorkingMemory:
                                  "severity": c["severity"], "status": c["status"],
                                  "narrative": c["narrative"], "steps": steps})
 
+        def _redact(txt):
+            return self.vault.redact(txt) if self.vault else txt
         ws["recent_observations"] = [
-            {"id": r["id"], "step": r["step"], "request": r["request"]}
+            {"id": r["id"], "step": r["step"], "request": _redact(r["request"])}
             for r in s.conn.execute(
                 "SELECT id,step,request FROM observations ORDER BY id DESC LIMIT 20").fetchall()]
 

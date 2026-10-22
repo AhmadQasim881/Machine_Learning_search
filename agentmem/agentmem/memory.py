@@ -21,6 +21,8 @@ from typing import Optional
 
 from . import chains as chainmod
 from . import forget
+import os
+
 from . import retrieve
 from . import write
 from .security import SecretsVault
@@ -32,7 +34,7 @@ class Memory:
     def __init__(self, path: str = "campaign.db"):
         self.store = Store(path)
         self.vault = SecretsVault(self.store)
-        self.working = WorkingMemory(self.store)
+        self.working = WorkingMemory(self.store, vault=self.vault)
 
     # ---- lifecycle ------------------------------------------------------- #
     def tick(self) -> int:
@@ -95,11 +97,16 @@ class Memory:
         return retrieve.recall(self.store, type=type, host=host, vuln_class=vuln_class,
                                limit=limit, seed_node=seed_node)
 
-    def chains(self) -> list[dict]:
-        """Discovered exploit chains, highest severity first, with cited steps."""
-        chainmod.detect(self.store)
+    def chains(self, include_invalidated: bool = False) -> list[dict]:
+        """Discovered exploit chains, highest severity first, with cited steps.
+        Detection runs lazily (only when new facts were written since last call).
+        Retracted (invalidated) chains are hidden by default."""
+        if self.store.take_dirty():
+            chainmod.detect(self.store)
         out = []
         for c in self.store.chains():
+            if c["status"] == "invalidated" and not include_invalidated:
+                continue
             steps = []
             for cs in self.store.chain_steps(c["id"]):
                 a = self.store.node_attrs(cs["node_id"])
@@ -123,11 +130,65 @@ class Memory:
         forget.soft_invalidate(self.store, node_id, reason)
 
     def reflect(self) -> dict:
-        """Consolidation pass: pin verified assets (never-forget) + re-detect
-        chains. (LLM summarization/insight curation plug in here when configured.)"""
+        """Consolidation pass: pin verified assets (never-forget) + a full chain
+        re-detect. (LLM summarization/insight curation plug in here when configured.)"""
+        self.store.take_dirty()          # we are about to run a full detect
         pinned = forget.auto_pin(self.store)
         chainmod.detect(self.store)
         return {"pinned": pinned, "chains": len(self.store.chains())}
+
+    def get_secret(self, handle: str):
+        """Resolve a credential value from the vault by handle (use sparingly)."""
+        return self.vault.get(handle)
+
+    def redact(self, text: str) -> str:
+        """Replace any stored secret value in `text` with its handle."""
+        return self.vault.redact(text)
+
+    def stats(self) -> dict:
+        """Cheap read-only health snapshot (no detection, no mutation)."""
+        s = self.store
+        by_type = {r["type"]: r["n"] for r in s.conn.execute(
+            "SELECT type, COUNT(*) n FROM nodes GROUP BY type").fetchall()}
+        invalid = s.conn.execute(
+            "SELECT COUNT(*) n FROM nodes WHERE status='invalidated'").fetchone()["n"]
+        live_chains = s.conn.execute(
+            "SELECT COUNT(*) n FROM chains WHERE status!='invalidated'").fetchone()["n"]
+        db_bytes = os.path.getsize(s.path) if os.path.exists(s.path) else 0
+        return {"step": s.step, "nodes_by_type": by_type, "invalidated": invalid,
+                "observations": s.conn.execute("SELECT COUNT(*) n FROM observations").fetchone()["n"],
+                "live_chains": live_chains, "db_bytes": db_bytes}
+
+    def context(self, budget_chars: int = 4000) -> str:
+        """Render a compact, SECRET-REDACTED memory block to inject into an LLM
+        prompt — the most common integration path. Prioritizes pinned/high-severity
+        items and truncates to `budget_chars`. This is the one call an agent needs
+        to put 'what memory knows' in front of the model safely."""
+        ws = self.working.rehydrate()
+        lines = [f"# MEMORY (campaign step {ws['step']})"]
+        if ws.get("targets"):
+            t = ws["targets"][0]
+            lines.append(f"Target: {t.get('program', '?')}  in-scope={t.get('in_scope', [])}")
+        ch = self.chains()
+        if ch:
+            lines.append("\n## Confirmed/candidate exploit chains (highest severity first)")
+            for c in ch:
+                lines.append(f"- [sev {c['severity']} {c['status']}] {c['goal']}: {c['narrative']}")
+        probes = self.next_probes()
+        if probes:
+            lines.append("\n## Next probes (to complete a chain)")
+            for p in probes[:5]:
+                lines.append(f"- toward {p['goal']}: obtain {p['missing_capability']} {p['constraints']}")
+        hot = [p for p in ws.get("pinned", []) if p["type"] == "finding"][:10]
+        if hot:
+            lines.append("\n## Confirmed findings (pinned)")
+            for p in hot:
+                a = p["attrs"]
+                lines.append(f"- {a.get('vuln_class', '?')} @ {a.get('host', '')}{a.get('path', '')}")
+        text = self.redact("\n".join(lines))     # never leak raw secrets into a prompt
+        if len(text) > budget_chars:
+            text = text[:budget_chars - 3] + "..."
+        return text
 
     def export(self) -> dict:
         """Full inspectable snapshot of the memory (for debugging/reporting)."""

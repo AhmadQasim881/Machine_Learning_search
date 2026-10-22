@@ -21,11 +21,15 @@ import hashlib
 import os
 import re
 import secrets as _secrets
+import unicodedata
 from typing import Optional
 
 from . import config
 
-_CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+# C0 + C1 control chars (keep none of them); zero-width + bidi override chars
+_CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+_INVISIBLE = re.compile(r"[​-‏‪-‮⁠-⁤⁦-⁯﻿]")
+_WS = re.compile(r"\s+")
 
 
 def trust_rank(trust: str) -> int:
@@ -43,7 +47,12 @@ def sanitize(text: str, max_len: int = 20000) -> str:
     extractors + an oracle do that)."""
     if not text:
         return ""
-    t = _CTRL.sub(" ", text)[:max_len]
+    # fold compatibility/homoglyph forms, drop invisible + control chars, then
+    # collapse whitespace runs so multi-space / newline-split markers are caught.
+    t = unicodedata.normalize("NFKC", text)
+    t = _INVISIBLE.sub("", t)
+    t = _CTRL.sub(" ", t)
+    t = _WS.sub(" ", t)[:max_len]
     low = t.lower()
     for marker in config.INJECTION_MARKERS:
         idx = low.find(marker)
@@ -60,13 +69,18 @@ class SecretsVault:
 
     def __init__(self, store, key: Optional[bytes] = None):
         self.store = store
-        # a per-campaign key kept in kv_meta (base64). Generated once.
+        env = os.environ.get("AGENTMEM_VAULT_KEY")
         existing = store._meta("vault_key")
         if key is not None:
             self._key = key
+        elif env:
+            # external key (preferred for anything real): derived, never persisted
+            self._key = hashlib.sha256(env.encode("utf-8")).digest()
         elif existing:
             self._key = base64.b64decode(existing)
         else:
+            # DEV fallback: a random key stored beside the ciphertext (NOT secure
+            # against local disk access — set AGENTMEM_VAULT_KEY or use a KMS).
             self._key = os.urandom(32)
             store._set_meta("vault_key", base64.b64encode(self._key).decode())
             store.conn.commit()

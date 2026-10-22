@@ -40,10 +40,12 @@ def auto_pin(store: Store) -> int:
             "SELECT id,type,status,pinned FROM nodes WHERE pinned=0").fetchall():
         if r["type"] in _AUTO_PIN_TYPES or (r["type"] == "finding" and r["status"] == "confirmed"):
             store.pin(r["id"]); n += 1
-    # nodes participating in any chain
+    # nodes participating in any LIVE chain (not one that was retracted)
     for r in store.conn.execute(
             "SELECT DISTINCT cs.node_id FROM chain_steps cs "
-            "JOIN nodes nd ON nd.id=cs.node_id WHERE nd.pinned=0").fetchall():
+            "JOIN nodes nd ON nd.id=cs.node_id "
+            "JOIN chains ch ON ch.id=cs.chain_id "
+            "WHERE nd.pinned=0 AND ch.status!='invalidated'").fetchall():
         store.pin(r["node_id"]); n += 1
     return n
 
@@ -57,4 +59,8 @@ def soft_invalidate(store: Store, node_id: int, reason: str = "") -> None:
     store.conn.execute(
         "UPDATE edges SET valid_to=? WHERE (src_id=? OR dst_id=?) AND valid_to IS NULL",
         (store.step, node_id, node_id))
-    store.conn.commit()
+    store._commit()
+    # retract any chain that depended on this node (never surface a withdrawn chain)
+    from . import chains as _chains
+    _chains.retract_invalidated(store)
+    store.mark_dirty()

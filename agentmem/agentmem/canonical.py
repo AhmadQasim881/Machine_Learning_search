@@ -48,7 +48,9 @@ def norm_path(path: str) -> str:
         if _NUM.match(seg) or _UUID.match(seg) or _HEX.match(seg):
             parts.append("{id}")
         else:
-            parts.append(seg.lower())
+            # keep segment case: /Admin and /admin are distinct on case-sensitive
+            # origins, and merging them would lose a finding (spec §4.2).
+            parts.append(seg)
     return "/" + "/".join(parts)
 
 

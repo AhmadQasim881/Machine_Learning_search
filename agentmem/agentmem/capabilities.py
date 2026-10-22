@@ -18,7 +18,7 @@ On the PROVIDES side attrs are concrete, or "*" meaning "attacker-controlled".
 from __future__ import annotations
 
 import json
-from fnmatch import fnmatch
+from fnmatch import fnmatchcase
 from typing import Optional
 
 from . import config
@@ -42,7 +42,9 @@ def _attr_ok(provided, required) -> bool:
         pattern = required[3:]
         if provided is None:
             return False
-        return provided == "*" or fnmatch(str(provided), pattern)
+        # case-insensitive + platform-independent (fnmatch uses os.path.normcase,
+        # which is identity on Linux but lowercases on Windows -> non-determinism)
+        return provided == "*" or fnmatchcase(str(provided).lower(), pattern.lower())
     if provided is None:
         return False
     return provided == required or provided == "*"

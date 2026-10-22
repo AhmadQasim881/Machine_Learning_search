@@ -141,5 +141,33 @@ examples/demo.py    runnable demonstration
 
 Design + provenance: `../docs/MEMORY_DESIGN.md` (the 28-paper synthesis spec).
 
+## Hardening pass (applied)
+
+A verified review pass fixed real correctness bugs and added robustness:
+- **Status reconciliation** — a later confirmed observation now promotes a stored
+  `suspected` node (and raises its trust); invalidated nodes stay invalidated
+  unless re-confirmed by an oracle.
+- **Retracted chains** — invalidating a step node now retracts any chain built on
+  it (hidden by default, row preserved for audit) — a withdrawn critical finding
+  can never surface as live.
+- **Trust gate** — `target_derived` facts can never reach `confirmed`.
+- **Correctness** — case-distinct paths no longer merge (`/Admin` ≠ `/admin`);
+  the capability glob is case-insensitive and platform-independent; `next_probes`
+  now covers single-need goals; duplicate "padded" chains are suppressed.
+- **Performance** — detection is decoupled from writes (lazy, dirty-flagged);
+  `PRAGMA synchronous=NORMAL`; batched retrieval touches; `store.transaction()`.
+- **Security** — the sanitizer folds unicode (NFKC) and strips zero-width/bidi
+  chars; the secrets vault takes an external key via `AGENTMEM_VAULT_KEY`.
+- **Integration** — `Memory.context()` renders a token-budgeted, **secret-redacted**
+  memory block for an LLM prompt; `stats()`, `get_secret()`, `redact()` added.
+
+## Deferred backlog (planned, not yet built)
+
+Node-level provenance → full consensus promotion (N-consistent); persisted
+Hypothesis nodes for the next-probe queue; per-target "portrait" summaries;
+embedding-based semantic recall + RRF fusion + `SAME_AS` synonym edges;
+incremental (per-node) chain detection; and the **core + profile** refactor that
+makes a source-code-review (taint-flow) profile drop onto the same engine.
+
 ## License
 MIT.

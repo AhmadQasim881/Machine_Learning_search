@@ -86,10 +86,17 @@ def recall(store: Store, type: Optional[str] = None, host: Optional[str] = None,
                 cand.setdefault(nid, r)
     scored = []
     for r in cand.values():
-        store.touch(r["id"])
         scored.append({"node_id": r["id"], "type": r["type"],
                        "score": composite_score(store, r),
                        "status": r["status"], "pinned": bool(r["pinned"]),
                        "attrs": json.loads(r["attrs_json"])})
     scored.sort(key=lambda d: d["score"], reverse=True)
-    return scored[:limit]
+    top = scored[:limit]
+    # reconsolidation: bump only the results we actually return, in one statement
+    ids = [d["node_id"] for d in top]
+    if ids:
+        store.conn.execute(
+            f"UPDATE nodes SET last_access_step=?, strength=strength+1 "
+            f"WHERE id IN ({','.join('?' * len(ids))})", (store.step, *ids))
+        store._commit()
+    return top

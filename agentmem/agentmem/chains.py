@@ -66,24 +66,27 @@ def rebuild_enables(store: Store) -> int:
                 if binding is not None:
                     break
             if binding is not None:
-                conf = min(a["confidence"], store.get_node(bid)["confidence"]) or 0.5
+                b = store.get_node(bid)
+                conf = min(a["confidence"], b["confidence"]) or 0.5
+                # a derived edge is only as trusted as its weaker endpoint
+                etrust = (a["trust"] if config.TRUST_RANK.get(a["trust"], 0)
+                          <= config.TRUST_RANK.get(b["trust"], 0) else b["trust"])
                 store.add_edge(aid, bid, "ENABLES", attrs=binding,
-                               confidence=conf, trust="agent_asserted",
-                               provenance=[aid, bid])
+                               confidence=conf, trust=etrust, provenance=[aid, bid])
                 n_edges += 1
     return n_edges
 
 
 def detect(store: Store) -> list[int]:
     """Full detection pass: rebuild ENABLES, search for goal-reaching paths,
-    materialize Chain nodes. Returns the chain row ids found/updated."""
+    materialize the MINIMAL Chain per goal, and retract chains whose steps were
+    invalidated. Returns the chain row ids found/updated."""
     rebuild_enables(store)
     nodes = {n["id"]: n for n in _chain_nodes(store)}
     provides = {nid: store.get_provides(nid) for nid in nodes}
     requires = {nid: store.get_requires(nid) for nid in nodes}
     base = _base_available(store)
 
-    # adjacency over current ENABLES edges
     adj: dict[int, list[tuple[int, int]]] = {nid: [] for nid in nodes}
     for e in store.all_edges("ENABLES"):
         if e["src_id"] in adj and e["dst_id"] in nodes:
@@ -92,22 +95,16 @@ def detect(store: Store) -> list[int]:
     def requires_satisfied(nid: int, avail: list) -> bool:
         return all(caps.any_unifies(avail, req) is not None for req in requires.get(nid, []))
 
-    # entry points: nodes whose requires are satisfied by base alone
     entries = [nid for nid in nodes if requires_satisfied(nid, base)]
 
-    found: list[int] = []
-    seen_chains: set[str] = set()
+    # collect candidate (goal, severity, path, edges, conf) then keep minimal paths
+    candidates: list[tuple] = []
 
-    # best-first DFS with caps; a "path" accumulates provided capabilities
     def walk(path: list[int], edges: list[Optional[int]], avail: list, conf: float):
         if len(path) > config.CHAIN_MAX_DEPTH:
             return
-        # check goals reached by the capabilities accumulated so far
         for goal, severity in caps.reached_goals(avail):
-            cid = _materialize(store, path, edges, goal, severity, conf, nodes, seen_chains)
-            if cid is not None:
-                found.append(cid)
-        # expand
+            candidates.append((goal, severity, list(path), list(edges), conf))
         tail = path[-1]
         for (nxt, eid) in adj.get(tail, [])[: config.CHAIN_MAX_WIDTH]:
             if nxt in path:
@@ -123,7 +120,55 @@ def detect(store: Store) -> list[int]:
     for nid in entries:
         avail0 = base + provides.get(nid, [])
         walk([nid], [None], avail0, nodes[nid]["confidence"] or 0.5)
+
+    found: list[int] = []
+    seen: set[str] = set()
+    for goal, severity, path, edges, conf in _keep_minimal(candidates):
+        cid = _materialize(store, path, edges, goal, severity, conf, nodes, seen)
+        if cid is not None:
+            found.append(cid)
+
+    retract_invalidated(store)
     return found
+
+
+def _keep_minimal(candidates: list[tuple]) -> list[tuple]:
+    """Per goal, drop any path that is a strict SUPERSET of a shorter kept path —
+    so a goal isn't re-materialized as padded chains for every super-path."""
+    bygoal: dict[str, list[tuple]] = {}
+    for c in candidates:
+        bygoal.setdefault(c[0], []).append(c)
+    out = []
+    for cs in bygoal.values():
+        cs.sort(key=lambda c: (len(c[2]), -c[4]))     # shorter, then higher confidence
+        kept_sets: list[frozenset] = []
+        for c in cs:
+            s = frozenset(c[2])
+            if any(k <= s for k in kept_sets):         # subset (incl equal) already kept
+                continue
+            kept_sets.append(s)
+            out.append(c)
+    return out
+
+
+def retract_invalidated(store: Store) -> int:
+    """Mark any stored chain that references an invalidated step node as
+    'invalidated' (row preserved for audit — never deleted). The worst failure
+    mode for a bug-bounty agent is surfacing a withdrawn critical chain as live."""
+    invalid = {r["id"] for r in store.conn.execute(
+        "SELECT id FROM nodes WHERE status='invalidated'").fetchall()}
+    if not invalid:
+        return 0
+    n = 0
+    for c in store.chains():
+        if c["status"] == "invalidated":
+            continue
+        step_nodes = {cs["node_id"] for cs in store.chain_steps(c["id"])}
+        if step_nodes & invalid:
+            store.conn.execute("UPDATE chains SET status='invalidated' WHERE id=?", (c["id"],))
+            n += 1
+    store._commit()
+    return n
 
 
 def _materialize(store: Store, path: list[int], edges: list, goal: str,
@@ -163,8 +208,9 @@ def next_probes(store: Store) -> list[dict]:
     out = []
     for rule in config.ESCALATION_RULES:
         missing = [need for need in rule["need"] if caps.any_unifies(avail, need) is None]
-        if missing and len(missing) < len(rule["need"]):
-            # partially satisfied — one more capability would complete it
+        if missing:
+            # some capability is still needed to reach this goal (incl. single-need
+            # goals, which the old `len(missing) < len(need)` guard silently dropped)
             for name, attrs in missing:
                 out.append({
                     "goal": rule["goal"],
