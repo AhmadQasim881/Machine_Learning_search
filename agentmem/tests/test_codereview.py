@@ -138,6 +138,23 @@ class TestTaintProbes(_CR):
         self.assertEqual(self.m.next_probes()[0]["goal"], "rce")           # highest severity first
 
 
+class TestNoWeakConfirmation(_CR):
+    def test_default_helpers_do_not_confirm(self):
+        nid = self.m.add_taint_sink("db.py", var="q", sink_type="sql", line=9)  # confirmed defaults False
+        self.assertEqual(self.m.store.get_node(nid)["status"], "suspected")
+
+    def test_generic_default_oracle_does_not_confirm(self):
+        # explicitly asking to confirm with a GENERIC oracle string must NOT confirm
+        nid = self.m.add_taint_sink("db.py", var="q", sink_type="sql", line=9,
+                                    confirmed=True, oracle="sink")
+        self.assertEqual(self.m.store.get_node(nid)["status"], "suspected")
+
+    def test_real_oracle_confirms(self):
+        nid = self.m.add_taint_sink("db.py", var="q", sink_type="sql", line=9,
+                                    confirmed=True, oracle="reviewed: concatenated into query")
+        self.assertEqual(self.m.store.get_node(nid)["status"], "confirmed")
+
+
 class TestEngineSharedWithWeb(unittest.TestCase):
     def test_default_profile_is_web_and_unaffected(self):
         with tempfile.TemporaryDirectory() as d:
