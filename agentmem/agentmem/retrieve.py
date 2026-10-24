@@ -127,8 +127,27 @@ def recall(store: Store, type: Optional[str] = None, host: Optional[str] = None,
                 if r and r["status"] != "invalidated":
                     cand.setdefault(nid, r)
 
-    # RRF across the three retrievers blends with the composite score
-    rrf = _rrf([exact_ids, graph_ids, sem_ids]) if sem_ids else {}
+    # free-text WITHOUT embeddings: a query must never be silently ignored. Fall
+    # back to a bounded SQL substring match over the node key + attributes so recall
+    # still responds to the query text (documented degraded mode vs. semantic).
+    text_ids: list[int] = []
+    if query and provider is None:
+        like = f"%{query.lower()}%"
+        tq = "SELECT id FROM nodes WHERE status!='invalidated' AND (lower(canonical_key) LIKE ? OR lower(attrs_json) LIKE ?)"
+        targs: list = [like, like]
+        if type:
+            tq += " AND type=?"; targs.append(type)
+        tq += " LIMIT ?"; targs.append(limit * 5)
+        for r in store.conn.execute(tq, targs).fetchall():
+            nid = r["id"]
+            if nid not in cand:
+                n = store.get_node(nid)
+                if n:
+                    cand[nid] = n
+            text_ids.append(nid)
+
+    # RRF across the retrievers blends with the composite score
+    rrf = _rrf([exact_ids, graph_ids, sem_ids, text_ids]) if (sem_ids or text_ids) else {}
 
     scored = []
     for r in cand.values():

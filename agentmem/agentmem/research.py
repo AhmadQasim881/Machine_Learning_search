@@ -608,6 +608,68 @@ class ResearchMemory:
             result["historical"] = hist
         return result
 
+    # ---- retrieval (SQL-side filter + paginate + rank; no N+1) ---------- #
+    def text_search_backend(self) -> str:
+        """Which text-search backend is active: 'fts5' when the SQLite build has
+        FTS5, else a documented 'like' fallback (never silently disabled)."""
+        return "fts5" if self.store.fts_enabled else "like"
+
+    def search_evidence(self, snapshot_id: Optional[int] = None, text: Optional[str] = None,
+                        kind: Optional[str] = None, status: Optional[str] = None,
+                        path: Optional[str] = None, symbol_id: Optional[str] = None,
+                        since_ts: Optional[float] = None, limit: int = 20, offset: int = 0,
+                        preview_chars: int = 200) -> list[dict]:
+        """Structured + textual evidence retrieval. ALL filtering, ranking and
+        pagination happen in ONE SQL statement (no per-row lookups), so a bounded
+        limit issues a constant number of statements regardless of store size.
+        Free-text works WITHOUT embeddings (FTS5 MATCH, or a LIKE fallback). When a
+        snapshot is given, exact-revision matches rank first and rows from other
+        revisions are labelled stale + revision_mismatch. Returns stable ids and a
+        bounded preview — never the raw artifact."""
+        if snapshot_id is not None:
+            self._require_snapshot(snapshot_id)
+        joins, where, args = "", ["e.valid_to IS NULL"], []
+        if text:
+            if self.store.fts_enabled:
+                joins += " JOIN evidence_fts f ON f.evidence_id = e.id"
+                where.append("evidence_fts MATCH ?")
+                args.append(text)
+            else:                                   # documented LIKE fallback
+                where.append("e.projection LIKE ?")
+                args.append(f"%{text}%")
+        if path or symbol_id:
+            joins += " JOIN value_identities v ON v.id = e.value_identity_id"
+            if path:
+                where.append("v.path=?"); args.append(path)
+            if symbol_id:
+                where.append("v.symbol_id=?"); args.append(symbol_id)
+        if kind:
+            where.append("e.kind=?"); args.append(kind)
+        if status:
+            where.append("e.status=?"); args.append(status)
+        if since_ts is not None:
+            where.append("e.created_ts>=?"); args.append(since_ts)
+
+        order_prefix, order_args = "", []
+        if snapshot_id is not None:
+            order_prefix = "CASE WHEN e.snapshot_id=? THEN 0 ELSE 1 END, "
+            order_args = [snapshot_id]
+        sql = (f"SELECT e.id,e.snapshot_id,e.kind,e.status,e.artifact_id,e.created_ts,"
+               f"e.projection_truncated,substr(e.projection,1,?) AS preview "
+               f"FROM evidence e{joins} WHERE {' AND '.join(where)} "
+               f"ORDER BY {order_prefix}e.created_ts DESC, e.id DESC LIMIT ? OFFSET ?")
+        params = [preview_chars, *args, *order_args, limit, offset]
+        rows = self.conn.execute(sql, params).fetchall()
+        out = []
+        for r in rows:
+            stale = snapshot_id is not None and r["snapshot_id"] != snapshot_id
+            out.append({"evidence_id": r["id"], "snapshot_id": r["snapshot_id"],
+                        "kind": r["kind"], "status": r["status"],
+                        "artifact_id": r["artifact_id"], "created_ts": r["created_ts"],
+                        "preview": r["preview"], "truncated": bool(r["projection_truncated"]),
+                        "stale": stale, "revision_mismatch": stale})
+        return out
+
     # ---- chain composition (explicit edges only) ------------------------ #
     def _current_edges(self, snapshot_id: int) -> list[dict]:
         rows = self.conn.execute(
