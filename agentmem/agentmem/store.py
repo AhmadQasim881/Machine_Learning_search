@@ -230,12 +230,20 @@ class Store:
 
     def add_provenance(self, node_id: int, obs_id: int) -> int:
         """Record that `obs_id` supports this node; return the count of distinct
-        supporting observations (used for consensus promotion)."""
+        supporting observations. The observation MUST be a real stored row — an
+        arbitrary/nonexistent id is rejected, so provenance can never be fabricated
+        from a number that corresponds to no evidence."""
+        if self.observation(obs_id) is None:
+            raise ValueError(f"unknown observation id {obs_id} (provenance must cite real evidence)")
         attrs = self.node_attrs(node_id)
         prov = set(attrs.get("_provenance", []))
         prov.add(obs_id)
         self.update_node(node_id, attrs={"_provenance": sorted(prov)})
         return len(prov)
+
+    def observation(self, obs_id: int) -> Optional[sqlite3.Row]:
+        return self.conn.execute(
+            "SELECT * FROM observations WHERE id=?", (obs_id,)).fetchone()
 
     def touch(self, node_id: int) -> None:
         """Reconsolidation: bump last_access_step and strengthen (MemoryBank)."""

@@ -23,9 +23,11 @@ class _CR(unittest.TestCase):
 
 class TestTaintChains(_CR):
     def test_sql_injection_dataflow(self):
-        self.m.add_taint_source("h.py", var="name", line=1)
-        self.m.add_taint_prop("h.py", var_in="name", var_out="q", line=2)
-        self.m.add_taint_sink("db.py", var="q", sink_type="sql", line=9)
+        # the first-generation helpers no longer auto-confirm from a generic oracle,
+        # so a multi-step chain must be built from reviewed (confirmed) facts
+        self.m.add_taint_source("h.py", var="name", line=1, confirmed=True, oracle="reviewed")
+        self.m.add_taint_prop("h.py", var_in="name", var_out="q", line=2, confirmed=True, oracle="reviewed")
+        self.m.add_taint_sink("db.py", var="q", sink_type="sql", line=9, confirmed=True, oracle="reviewed")
         self.assertIn("full_db_read", self._goals())
 
     def test_rce_dataflow(self):
@@ -83,11 +85,12 @@ class TestExtendedSinkGoals(_CR):
 class TestInterproceduralChain(_CR):
     def test_multi_hop_flow_across_files(self):
         # untrusted -> helper -> formatter -> shell, three propagators across 4 files
-        self.m.add_taint_source("api/handler.py", var="p0", symbol="handle", line=10)
-        self.m.add_taint_prop("api/handler.py", var_in="p0", var_out="p1", symbol="handle", line=11)
-        self.m.add_taint_prop("lib/util.py", var_in="p1", var_out="p2", symbol="build", line=5)
-        self.m.add_taint_prop("lib/fmt.py", var_in="p2", var_out="p3", symbol="fmt", line=8)
-        self.m.add_taint_sink("lib/sh.py", var="p3", sink_type="command", symbol="popen", line=3)
+        _o = {"confirmed": True, "oracle": "reviewed"}
+        self.m.add_taint_source("api/handler.py", var="p0", symbol="handle", line=10, **_o)
+        self.m.add_taint_prop("api/handler.py", var_in="p0", var_out="p1", symbol="handle", line=11, **_o)
+        self.m.add_taint_prop("lib/util.py", var_in="p1", var_out="p2", symbol="build", line=5, **_o)
+        self.m.add_taint_prop("lib/fmt.py", var_in="p2", var_out="p3", symbol="fmt", line=8, **_o)
+        self.m.add_taint_sink("lib/sh.py", var="p3", sink_type="command", symbol="popen", line=3, **_o)
         rce = [c for c in self.m.chains() if c["goal"] == "rce"]
         self.assertTrue(rce, "a cross-file command-injection chain should be found")
         self.assertEqual(len(rce[0]["steps"]), 5)           # source + 3 props + sink

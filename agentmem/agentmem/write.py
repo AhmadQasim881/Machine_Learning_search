@@ -20,15 +20,37 @@ from .security import sanitize, may_seed_chain
 from .store import Store
 
 
+# oracle strings too generic to count as real verification — a finding "confirmed"
+# with one of these is treated as unconfirmed (a default helper string is not proof).
+GENERIC_ORACLES = {"", "source", "sink", "dataflow", "sanitizer", "finding", "oracle",
+                   "confirmed", "true", "yes", "n/a", "na", "none", "default", "generic"}
+
+
+def _is_real_oracle(oracle: str) -> bool:
+    return bool(oracle) and oracle.strip().lower() not in GENERIC_ORACLES
+
+
 def _record_provenance(store: Store, nid: int, obs_id: Optional[int]) -> None:
-    """Attach an observation to a node and, if enough distinct observations now
+    """Attach an observation to a node and, if enough INDEPENDENT observations now
     corroborate a still-suspected finding, promote it by CONSENSUS (weaker than an
-    oracle: confidence CONSENSUS_CONFIDENCE, oracle='consensus')."""
+    oracle: confidence CONSENSUS_CONFIDENCE, oracle='consensus').
+
+    Independence is required: the supporting observations must be real stored rows
+    (add_provenance enforces this) AND cover at least CONSENSUS_N DISTINCT
+    (request, source) signatures. Re-adding the same observation, or arbitrary
+    duplicate ids, can no longer promote a finding."""
     if obs_id is None:
         return
-    count = store.add_provenance(nid, obs_id)
+    store.add_provenance(nid, obs_id)          # rejects nonexistent ids
     node = store.get_node(nid)
-    if node and node["status"] == "suspected" and count >= config.CONSENSUS_N:
+    if not node or node["status"] != "suspected":
+        return
+    sigs = set()
+    for oid in store.node_attrs(nid).get("_provenance", []):
+        o = store.observation(oid)
+        if o is not None:
+            sigs.add((o["request"], o["source"]))
+    if len(sigs) >= config.CONSENSUS_N:        # independent corroboration
         store.set_status(nid, "confirmed", confidence=config.CONSENSUS_CONFIDENCE)
         store.update_node(nid, attrs={"oracle": "consensus"})
         store.pin(nid)
@@ -89,7 +111,10 @@ def add_fact(store: Store, kind: str, canonical_key: str, attrs: Optional[dict] 
         attrs["oracle"] = sanitize(oracle, 500)
     attrs = {k: (sanitize(v, 2000) if isinstance(v, str) else v) for k, v in attrs.items()}
 
-    status = "confirmed" if (confirmed and oracle and may_seed_chain(trust)) else "suspected"
+    # VERIFICATION GATE: confirmed only with a REAL (non-generic) oracle AND a
+    # trusted source. A generic default oracle string ("source"/"sink"/...) is not
+    # proof, so a default code-review helper cannot mint a confirmed record.
+    status = "confirmed" if (confirmed and _is_real_oracle(oracle) and may_seed_chain(trust)) else "suspected"
     confidence = 0.9 if status == "confirmed" else 0.35
     if not may_seed_chain(trust):
         confidence = min(confidence, 0.3)
@@ -127,9 +152,10 @@ def add_finding(store: Store, vuln_class: str, host: str = "", path: str = "/",
     # they surface into the working set / prompt context later.
     attrs = {k: (sanitize(v, 2000) if isinstance(v, str) else v) for k, v in attrs.items()}
 
-    # VERIFICATION GATE: confirmed only with an oracle AND from a trusted source
-    # (target-derived text can never promote a finding to confirmed).
-    status = "confirmed" if (confirmed and oracle and may_seed_chain(trust)) else "suspected"
+    # VERIFICATION GATE: confirmed only with a REAL (non-generic) oracle AND from a
+    # trusted source (target-derived text / a generic default string can never
+    # promote a finding to confirmed).
+    status = "confirmed" if (confirmed and _is_real_oracle(oracle) and may_seed_chain(trust)) else "suspected"
     confidence = 0.9 if status == "confirmed" else 0.35
     if not may_seed_chain(trust):
         confidence = min(confidence, 0.3)   # target-derived never seeds at full confidence

@@ -119,14 +119,18 @@ class Memory:
 
     # ---- code-review (taint) sugar — only meaningful under CODEREVIEW -------- #
     def add_taint_source(self, file: str, var: str, symbol: str = "", line: int = 0,
-                         confirmed: bool = True, oracle: str = "source") -> int:
+                         confirmed: bool = False, oracle: str = "") -> int:
+        # NOTE: these first-generation helpers default to UNCONFIRMED (a generic
+        # default oracle is not proof). For rigorous, revision-aware, evidence-based
+        # code review prefer agentmem.ResearchMemory. Passing a real oracle + a
+        # trusted source is still required to confirm here.
         key = profiles.cr_key("taint_source", file, symbol, var, line)
         return self.add_fact("taint_source", key,
                              {"file": file, "var": var, "symbol": symbol, "line": line},
                              confirmed=confirmed, oracle=oracle)
 
     def add_taint_prop(self, file: str, var_in: str, var_out: str, symbol: str = "",
-                       line: int = 0, confirmed: bool = True, oracle: str = "dataflow") -> int:
+                       line: int = 0, confirmed: bool = False, oracle: str = "") -> int:
         key = profiles.cr_key("taint_prop", file, symbol, var_out, line)
         return self.add_fact("taint_prop", key,
                              {"file": file, "var_in": var_in, "var_out": var_out,
@@ -134,7 +138,7 @@ class Memory:
                              confirmed=confirmed, oracle=oracle)
 
     def add_taint_sink(self, file: str, var: str, sink_type: str, symbol: str = "",
-                       line: int = 0, confirmed: bool = True, oracle: str = "sink",
+                       line: int = 0, confirmed: bool = False, oracle: str = "",
                        severity: int = 8) -> int:
         key = profiles.cr_key("taint_sink", file, symbol, var, line)
         return self.add_fact("taint_sink", key,
@@ -143,7 +147,7 @@ class Memory:
                              confirmed=confirmed, oracle=oracle, severity=severity)
 
     def add_taint_sanitizer(self, file: str, var: str, symbol: str = "", line: int = 0,
-                            confirmed: bool = True, oracle: str = "sanitizer") -> int:
+                            confirmed: bool = False, oracle: str = "") -> int:
         """Record a sanitizer (documentation only — it breaks a chain by the
         ABSENCE of a propagator for the cleaned value, so do NOT also record a
         taint_prop for a value that this sanitizer cleans)."""

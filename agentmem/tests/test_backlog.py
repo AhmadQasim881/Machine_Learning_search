@@ -99,11 +99,12 @@ class TestEmbeddings(_Base):
 class TestIncrementalDetection(_Base):
     def test_chain_forms_across_separate_writes(self):
         m = self.mk(profile=CODEREVIEW)
-        m.add_taint_source("h.py", var="name", line=1)
+        _o = {"confirmed": True, "oracle": "reviewed"}
+        m.add_taint_source("h.py", var="name", line=1, **_o)
         self.assertEqual(m.chains(), [])                 # no sink yet; edges built
-        m.add_taint_prop("h.py", var_in="name", var_out="q", line=2)
+        m.add_taint_prop("h.py", var_in="name", var_out="q", line=2, **_o)
         self.assertEqual(m.chains(), [])
-        m.add_taint_sink("db.py", var="q", sink_type="sql", line=9)
+        m.add_taint_sink("db.py", var="q", sink_type="sql", line=9, **_o)
         # the incremental edge rebuild must connect the newly-added sink
         self.assertIn("full_db_read", {c["goal"] for c in m.chains()})
         m.close()
