@@ -26,4 +26,4 @@ agentmem-mcp = "agentmem.mcp_server:main"
 include = ["agentmem*"]
 
 [tool.setuptools.package-data]
-agentmem = ["schema.sql"]
+agentmem = ["schema.sql", "schema_research.sql"]

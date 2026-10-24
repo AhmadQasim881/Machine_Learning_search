@@ -4,6 +4,7 @@ __pycache__/
 *.db-wal
 *.db-shm
 *.sqlite3
+*.artifacts/
 .venv/
 venv/
 *.egg-info/

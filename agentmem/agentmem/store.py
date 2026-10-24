@@ -20,6 +20,8 @@ from typing import Any, Iterable, Optional
 
 from . import capabilities as caps
 from . import config
+from . import migrations
+from .artifacts import ArtifactStore
 
 # status reconciliation ranks (invalidated is special — see upsert_node)
 _STATUS_RANK = {"invalidated": 0, "suspected": 1, "confirmed": 2}
@@ -27,17 +29,33 @@ _STATUS_RANK = {"invalidated": 0, "suspected": 1, "confirmed": 2}
 _SCHEMA = os.path.join(os.path.dirname(__file__), "schema.sql")
 
 
+def _artifact_root(db_path: str) -> str:
+    """Where the content-addressed artifact store lives for a given database.
+    Beside the DB file (``<db>.artifacts/``); an in-memory DB gets a temp dir."""
+    if db_path in (":memory:", "") or db_path.startswith("file::memory:"):
+        import tempfile
+        return tempfile.mkdtemp(prefix="agentmem-artifacts-")
+    return os.path.abspath(db_path) + ".artifacts"
+
+
 class Store:
     def __init__(self, path: str = "campaign.db", check_same_thread: bool = True):
         self.path = path
-        self._commit_depth = 0
+        self._tx_depth = 0          # active transaction()/savepoint nesting depth
+        self._sp_counter = 0        # monotonic savepoint-name source
         self._dirty = True          # chains need (re)detection (lazy, see memory.chains)
         self._new_cap_nodes: set = set()   # capability nodes changed since last edge rebuild
         self._edges_initialized = False    # first detect does a full ENABLES rebuild
         # check_same_thread=False lets a long-lived connection be driven from a
         # thread pool (e.g. the MCP server's sync-tool offload); callers that do
         # this MUST serialize access themselves (the MCP server holds a lock).
-        self.conn = sqlite3.connect(path, check_same_thread=check_same_thread)
+        #
+        # isolation_level=None => autocommit: a statement outside an explicit
+        # transaction() is immediately durable (matching the old per-write commit),
+        # while transaction() owns BEGIN/COMMIT/ROLLBACK + SAVEPOINTs so a failing
+        # scope ROLLS BACK instead of committing a partial evidence graph.
+        self.conn = sqlite3.connect(path, check_same_thread=check_same_thread,
+                                    isolation_level=None)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=NORMAL")   # WAL-safe, far fewer fsyncs
@@ -46,26 +64,55 @@ class Store:
             self.conn.executescript(fh.read())
         if self._meta("step") is None:
             self._set_meta("step", "0")
-        self._commit()
+        migrations.migrate(self.conn)       # additive forward migrations + schema_version
+        self.artifacts = ArtifactStore(_artifact_root(path))
 
     def close(self) -> None:
         self.conn.close()
 
     # ---- commit control / batching -------------------------------------- #
     def _commit(self) -> None:
-        if self._commit_depth == 0:
-            self.conn.commit()
+        """No-op in autocommit mode (isolation_level=None): statements outside a
+        transaction() are already durable, and committing here mid-transaction
+        would end a transaction()/SAVEPOINT scope early. transaction() owns
+        COMMIT/ROLLBACK. Kept as a method so existing call sites are unaffected."""
+        return
 
     @contextmanager
     def transaction(self):
-        """Defer commits until the block exits — one fsync for a bulk write."""
-        self._commit_depth += 1
+        """A real, nested, rolling-back transaction scope.
+
+        The outer scope runs BEGIN and then COMMITs on success or ROLLBACKs on any
+        exception (the previous implementation committed in `finally`, persisting a
+        partial graph even when the body raised — the bug this fixes). Inner scopes
+        use SAVEPOINTs so a nested failure rolls back only its own work and
+        re-raises, while the outer scope can still decide to commit or roll back.
+        Also batches writes into one fsync."""
+        outer = self._tx_depth == 0
+        sp = None
+        if outer:
+            self.conn.execute("BEGIN")
+        else:
+            sp = f"am_sp_{self._sp_counter}"
+            self._sp_counter += 1
+            self.conn.execute(f"SAVEPOINT {sp}")
+        self._tx_depth += 1
         try:
             yield self
+        except BaseException:
+            if outer:
+                self.conn.execute("ROLLBACK")
+            else:
+                self.conn.execute(f"ROLLBACK TO {sp}")
+                self.conn.execute(f"RELEASE {sp}")
+            raise
+        else:
+            if outer:
+                self.conn.execute("COMMIT")
+            else:
+                self.conn.execute(f"RELEASE {sp}")
         finally:
-            self._commit_depth -= 1
-            if self._commit_depth == 0:
-                self._commit()
+            self._tx_depth -= 1
 
     # ---- chain-detection dirty flag (lazy detection; see memory.chains) --- #
     def mark_dirty(self) -> None:
@@ -260,17 +307,19 @@ class Store:
     # ---- capabilities ---------------------------------------------------- #
     def set_capabilities(self, node_id: int, provides: list, requires: list) -> None:
         self._new_cap_nodes.add(node_id)      # mark for incremental edge rebuild
-        self.conn.execute("DELETE FROM provides WHERE node_id=?", (node_id,))
-        self.conn.execute("DELETE FROM requires WHERE node_id=?", (node_id,))
-        for name, attrs in provides:
-            self.conn.execute(
-                "INSERT OR IGNORE INTO provides(node_id,token,attrs_json) VALUES(?,?,?)",
-                (node_id, name, caps.dump_attrs(attrs)))
-        for name, attrs in requires:
-            self.conn.execute(
-                "INSERT OR IGNORE INTO requires(node_id,token,attrs_json) VALUES(?,?,?)",
-                (node_id, name, caps.dump_attrs(attrs)))
-        self._commit()
+        # DELETE-then-INSERT must be atomic (autocommit would otherwise expose a
+        # window with the old rows gone and the new rows not yet written).
+        with self.transaction():
+            self.conn.execute("DELETE FROM provides WHERE node_id=?", (node_id,))
+            self.conn.execute("DELETE FROM requires WHERE node_id=?", (node_id,))
+            for name, attrs in provides:
+                self.conn.execute(
+                    "INSERT OR IGNORE INTO provides(node_id,token,attrs_json) VALUES(?,?,?)",
+                    (node_id, name, caps.dump_attrs(attrs)))
+            for name, attrs in requires:
+                self.conn.execute(
+                    "INSERT OR IGNORE INTO requires(node_id,token,attrs_json) VALUES(?,?,?)",
+                    (node_id, name, caps.dump_attrs(attrs)))
 
     def get_provides(self, node_id: int) -> list:
         rows = self.conn.execute(
@@ -291,6 +340,69 @@ class Store:
         rows = self.conn.execute(
             "SELECT DISTINCT node_id FROM provides WHERE token=?", (token,)).fetchall()
         return [r["node_id"] for r in rows]
+
+    # ---- schema version -------------------------------------------------- #
+    @property
+    def schema_version(self) -> int:
+        return migrations.get_version(self.conn)
+
+    @property
+    def fts_enabled(self) -> bool:
+        return migrations.fts5_enabled(self.conn)
+
+    # ---- content-addressed artifacts (immutable raw evidence) ------------ #
+    def put_artifact(self, data, media_type: str = "application/octet-stream",
+                     original_name: str = "", producing_run: str = "",
+                     retention: str = "keep") -> dict:
+        """Store raw bytes/str immutably and record them in the `artifacts` table.
+        Returns {id, sha256, size, storage_path}. Idempotent on identical bytes:
+        the blob dedupes on disk and the row dedupes on sha256. The disk write and
+        the metadata row commit together."""
+        if isinstance(data, str):
+            info = self.artifacts.put_text(data)
+        else:
+            info = self.artifacts.put_bytes(data)
+        with self.transaction():
+            row = self.conn.execute(
+                "SELECT id FROM artifacts WHERE sha256=?", (info["sha256"],)).fetchone()
+            if row is not None:
+                return {"id": row["id"], **info}
+            cur = self.conn.execute(
+                "INSERT INTO artifacts(sha256,media_type,size,storage_path,producing_run,"
+                "original_name,retention,created_ts) VALUES(?,?,?,?,?,?,?,?)",
+                (info["sha256"], media_type, info["size"], info["storage_path"],
+                 producing_run, original_name, retention, time.time()))
+            return {"id": cur.lastrowid, **info}
+
+    def get_artifact_bytes(self, artifact_id: int, verify: bool = True):
+        """Return the raw bytes for an artifact row id (re-verifying the digest),
+        or None if the row or its blob is missing."""
+        r = self.conn.execute(
+            "SELECT sha256 FROM artifacts WHERE id=?", (artifact_id,)).fetchone()
+        if r is None:
+            return None
+        return self.artifacts.get_bytes(r["sha256"], verify=verify)
+
+    def artifact_row(self, artifact_id: int) -> Optional[sqlite3.Row]:
+        return self.conn.execute(
+            "SELECT * FROM artifacts WHERE id=?", (artifact_id,)).fetchone()
+
+    # ---- audit ----------------------------------------------------------- #
+    def add_audit(self, op: str, affected_table: str = "", affected_id: Optional[int] = None,
+                  actor: str = "", session: str = "", correlation_id: str = "",
+                  old_state: str = "", new_state: str = "", rationale: str = "") -> int:
+        """Append an immutable audit event for a state-changing operation."""
+        cur = self.conn.execute(
+            "INSERT INTO audit_events(ts,actor,session,correlation_id,op,affected_table,"
+            "affected_id,old_state,new_state,rationale) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (time.time(), actor, session, correlation_id, op, affected_table,
+             affected_id, old_state, new_state, rationale))
+        return cur.lastrowid
+
+    def audit_for(self, affected_table: str, affected_id: int) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            "SELECT * FROM audit_events WHERE affected_table=? AND affected_id=? ORDER BY id",
+            (affected_table, affected_id)).fetchall()
 
     # ---- episodic -------------------------------------------------------- #
     def add_observation(self, request: str, response_meta: str, trust: str,

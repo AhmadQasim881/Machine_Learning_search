@@ -63,6 +63,28 @@ def sanitize(text: str, max_len: int = 20000) -> str:
     return t
 
 
+def project_text(raw: str, vault: Optional["SecretsVault"] = None,
+                 max_chars: int = 4000) -> tuple[str, bool]:
+    """Build a bounded, sanitized, secret-redacted text PROJECTION of `raw` for
+    prompts and search. This never replaces the raw evidence (which is preserved
+    verbatim as a content-addressed artifact) — it is a lossy, safe-to-show view.
+
+    Order matters: sanitize (fold unicode, strip control/zero-width/bidi, defang
+    injection markers) and redact secrets BEFORE truncating, so the bound cannot
+    slice a secret or a control sequence in half. Returns (projection, truncated).
+    """
+    if not raw:
+        return "", False
+    t = sanitize(raw, max_len=max(max_chars * 4, len(raw)))  # sanitize full text first
+    if vault is not None:
+        t = vault.redact(t)
+    truncated = len(t) > max_chars
+    if truncated:
+        marker = f" …[+{len(t) - max_chars} chars in artifact]"
+        t = t[:max_chars] + marker
+    return t, truncated
+
+
 class SecretsVault:
     """Stores secret values encrypted (sha256-CTR keystream) and hands back a
     stable handle. The graph/prompts/summaries reference the handle only."""
