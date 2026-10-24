@@ -644,6 +644,86 @@ class ResearchMemory:
             result["historical"] = hist
         return result
 
+    def invalidate_changed_paths(self, snapshot_id: int, changed_paths, reason: str = "source changed",
+                                 new_snapshot_id: Optional[int] = None) -> dict:
+        """Active dependency invalidation. Given source paths that changed (e.g. from
+        a diff against a newer revision), mark the OLD snapshot's dependent records
+        STALE — without rewriting history:
+
+          * value identities on a changed path -> status 'stale' (so chains() drops
+            any chain routed through changed code);
+          * evidence backed by those identities/source refs -> status 'stale'
+            (and removed from the free-text index);
+          * a 'supported' hypothesis whose support is now stale -> reverted to 'open';
+          * a finding with 'demonstrated' impact that relied on it -> 'suspected'.
+
+        Case-sensitive exact path match. Records the trigger (and the new revision,
+        if given) as the stale_reason + an audit event. Returns counts."""
+        self._require_snapshot(snapshot_id)
+        paths = set(changed_paths or [])
+        if not paths:
+            return {"identities": 0, "evidence": 0, "hypotheses": 0, "findings": 0}
+        qmarks = ",".join("?" * len(paths))
+        note = reason + (f" (superseded by snapshot {new_snapshot_id})" if new_snapshot_id else "")
+
+        affected_vids = [r["id"] for r in self.conn.execute(
+            f"SELECT id FROM value_identities WHERE snapshot_id=? AND valid_to IS NULL "
+            f"AND path IN ({qmarks})", (snapshot_id, *paths)).fetchall()]
+        counts = {"identities": 0, "evidence": 0, "hypotheses": 0, "findings": 0}
+        with self.store.transaction():
+            for vid in affected_vids:
+                self.conn.execute(
+                    "UPDATE value_identities SET status='stale' WHERE id=? AND status!='stale'", (vid,))
+                self.store.add_audit("stale_value_identity", "value_identities", vid,
+                                     actor=self.actor, session=self.session,
+                                     new_state="stale", rationale=note)
+                counts["identities"] += 1
+
+            # evidence backed by an affected identity OR a source ref on a changed path
+            ev_rows = self.conn.execute(
+                f"SELECT DISTINCT e.id FROM evidence e LEFT JOIN source_refs s ON s.id=e.source_ref_id "
+                f"WHERE e.snapshot_id=? AND e.valid_to IS NULL AND e.status!='stale' AND ("
+                f"  e.value_identity_id IN (SELECT id FROM value_identities WHERE snapshot_id=? "
+                f"    AND path IN ({qmarks}))"
+                f"  OR s.path IN ({qmarks}))",
+                (snapshot_id, snapshot_id, *paths, *paths)).fetchall()
+            staled_ev = [r["id"] for r in ev_rows]
+            for eid in staled_ev:
+                self.conn.execute(
+                    "UPDATE evidence SET status='stale', stale_reason=? WHERE id=?", (note, eid))
+                if self.store.fts_enabled:
+                    self.conn.execute("DELETE FROM evidence_fts WHERE evidence_id=?", (eid,))
+                self.store.add_audit("stale_evidence", "evidence", eid, actor=self.actor,
+                                     session=self.session, new_state="stale", rationale=note)
+                counts["evidence"] += 1
+
+            # supported hypotheses whose support is now stale -> back to open
+            if staled_ev:
+                ev_marks = ",".join("?" * len(staled_ev))
+                hyp_rows = self.conn.execute(
+                    f"SELECT DISTINCT he.hypothesis_id AS hid FROM hypothesis_evidence he "
+                    f"JOIN hypotheses h ON h.id=he.hypothesis_id "
+                    f"WHERE he.relation='supports' AND he.evidence_id IN ({ev_marks}) "
+                    f"AND h.status='supported'", tuple(staled_ev)).fetchall()
+                for r in hyp_rows:
+                    self.conn.execute("UPDATE hypotheses SET status='open' WHERE id=?", (r["hid"],))
+                    self.store.add_audit("stale_hypothesis", "hypotheses", r["hid"], actor=self.actor,
+                                         session=self.session, old_state="supported",
+                                         new_state="open", rationale=note)
+                    counts["hypotheses"] += 1
+                    # findings that relied on this hypothesis lose a demonstrated impact
+                    for fr in self.conn.execute(
+                            "SELECT id FROM findings WHERE hypothesis_id=? AND impact_state='demonstrated'",
+                            (r["hid"],)).fetchall():
+                        self.conn.execute(
+                            "UPDATE findings SET impact_state='suspected' WHERE id=?", (fr["id"],))
+                        self.store.add_audit("stale_finding_impact", "findings", fr["id"],
+                                             actor=self.actor, session=self.session,
+                                             old_state="demonstrated", new_state="suspected",
+                                             rationale=note)
+                        counts["findings"] += 1
+        return counts
+
     # ---- Firefox record model (external-analyzer evidence) -------------- #
     def add_boundary(self, snapshot_id: int, name: str, kind: str = "process",
                      description: str = "") -> int:
@@ -837,14 +917,17 @@ class ResearchMemory:
         WEAKEST transition on it (and an active guard caps a step at 'blocked'), so
         a chain can never be stronger than its least-supported step."""
         self._require_snapshot(snapshot_id)
-        edges = self._current_edges(snapshot_id)
-        by_src: dict[int, list[dict]] = {}
-        for e in edges:
-            by_src.setdefault(e["src_vid"], []).append(e)
-
+        # exclude identities that have been staled (source changed) or rejected, so a
+        # chain through changed/disproven code is retracted, not silently kept.
         vids = {r["id"]: dict(r) for r in self.conn.execute(
-            "SELECT * FROM value_identities WHERE snapshot_id=? AND valid_to IS NULL",
-            (snapshot_id,)).fetchall()}
+            "SELECT * FROM value_identities WHERE snapshot_id=? AND valid_to IS NULL "
+            "AND status NOT IN ('stale','rejected')", (snapshot_id,)).fetchall()}
+        # an edge is traversable only if BOTH endpoints are live (a staled middle
+        # node must break the chain, not be routed through).
+        by_src: dict[int, list[dict]] = {}
+        for e in self._current_edges(snapshot_id):
+            if e["src_vid"] in vids and e["dst_vid"] in vids:
+                by_src.setdefault(e["src_vid"], []).append(e)
         sources = [v for v in vids.values() if v["role"] == "source"]
 
         out, seen_keys = [], set()

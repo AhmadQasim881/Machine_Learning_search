@@ -163,6 +163,16 @@ def reclassify_sink(value_identity_id: int, new_sink_type: str, reason: str = ""
         return _j(_tools().reclassify_sink(value_identity_id, new_sink_type, reason))
 
 
+@mcp.tool(description="Active dependency invalidation: given changed source paths, mark the "
+                      "snapshot's dependent identities/evidence/hypotheses/findings stale and "
+                      "retract chains through changed code (history preserved).")
+def invalidate_changed_paths(snapshot_id: int, changed_paths: list, reason: str = "source changed",
+                             new_snapshot_id: int = 0) -> str:
+    with _LOCK:
+        return _j(_tools().invalidate_changed_paths(snapshot_id, changed_paths, reason,
+                                                    new_snapshot_id))
+
+
 @mcp.tool(description="Export a structured evidence bundle for a snapshot (snapshot identity, "
                       "chains, bounded evidence previews, findings).")
 def export_evidence_bundle(snapshot_id: int, limit: int = 100) -> str:

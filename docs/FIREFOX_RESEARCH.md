@@ -130,6 +130,7 @@ exact config shape and gotchas).
 | `query_history` | revision-aware recall (exact first; historical labelled stale) |
 | `review_chain` | which transitions are demonstrated and which are missing |
 | `reclassify_sink` | append-only reclassification (stales the old chain) |
+| `invalidate_changed_paths` | active staleness: mark records on changed paths stale, retract their chains |
 | `export_evidence_bundle` | structured bundle for human review |
 
 ### Response contract

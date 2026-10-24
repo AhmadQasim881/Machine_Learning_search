@@ -279,6 +279,19 @@ class ResearchTools:
             return _err(_classify(e), str(e))
         return _ok({"new_value_identity_id": new_vid})
 
+    def invalidate_changed_paths(self, snapshot_id: int = 0, changed_paths=None,
+                                 reason: str = "source changed", new_snapshot_id: int = 0) -> dict:
+        if not changed_paths:
+            return _err(INVALID_ARGUMENT, "changed_paths is required")
+        if isinstance(changed_paths, str):
+            changed_paths = [p.strip() for p in changed_paths.split(",") if p.strip()]
+        try:
+            counts = self.m.invalidate_changed_paths(snapshot_id, changed_paths, reason,
+                                                     new_snapshot_id or None)
+        except ValueError as e:
+            return _err(_classify(e), str(e))
+        return _ok(counts)
+
     def export_evidence_bundle(self, snapshot_id: int = 0, limit: int = 100) -> dict:
         if limit > MAX_LIMIT:
             return _err(RESOURCE_LIMIT, f"limit {limit} exceeds MAX_LIMIT {MAX_LIMIT}")
