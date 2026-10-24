@@ -13,6 +13,39 @@ multi-step exploit chains** (e.g. open-redirect → OAuth → token theft).
 > embeddings, no installs.** Chain detection is deterministic graph search over
 > typed capability tokens, not similarity. LLM/embedding enrichment is additive.
 
+## Two layers
+
+agentmem has two profiles over one SQLite engine:
+
+1. **Web bug-bounty memory** (the original) — capability-unification chains over
+   web findings (open-redirect → OAuth → token theft). This is what most of this
+   README describes.
+2. **Revision-aware research memory** (`agentmem.ResearchMemory`, schema v2–v3) —
+   an evidence system for long-horizon **source-code security research** (e.g.
+   authorized Firefox research). It does **not** infer data flow from matching
+   variable names; a code chain exists only along **explicit, provenance-bearing,
+   revision-scoped flow edges**. See **[docs/FIREFOX_RESEARCH.md](../docs/FIREFOX_RESEARCH.md)**
+   and **[docs/RESEARCH_SCHEMA.md](../docs/RESEARCH_SCHEMA.md)**.
+
+### Memory vs. static analysis vs. validation vs. demonstrated impact
+
+agentmem is **research memory and an evidence system — not a static analyzer, a
+build system, or a validator.** It records and connects what external tools and
+human review establish; it never manufactures those facts. It keeps four things
+deliberately separate, each with its own state field (never one `confirmed` flag):
+
+| Layer | What it means here | Who establishes it |
+|---|---|---|
+| **Memory / evidence** | a recorded source ref, value identity, analysis result, note | an index, a tool, or exact human review — stored verbatim as an artifact |
+| **Static analysis** | a candidate flow/transition between scoped identities | CodeQL/Clang/Searchfox-derived adapters (recorded as explicit flow edges) |
+| **Validation** | a build/test/repro run and its outcome | an isolated build+test worker (recorded as a validation run) |
+| **Demonstrated impact** | a chain whose every required transition is demonstrated | only when the evidence actually shows it — never because steps look plausible |
+
+A recorded source, sink, or static-analysis result does **not** prove a
+vulnerability; a reproduced crash does **not** prove exploitable impact; a chain is
+**demonstrated** only when every transition on it is. agentmem enforces these as
+distinct states and gates promotion on real, trusted, independent evidence.
+
 ---
 
 ## The key idea: chains as capability unification
@@ -38,7 +71,7 @@ dissimilar* facts — which is exactly what finds chains.
 
 ```bash
 cd agentmem
-python -m unittest discover -s tests        # 52 tests, stdlib only
+python -m unittest discover -s tests        # 110 tests, stdlib only
 python examples/demo.py                      # web: 3 worked exploit-chain examples
 python examples/codereview_demo.py           # code-review: taint-flow chains, SAME engine
 ```
@@ -92,6 +125,37 @@ sink/sanitizer`, `get_chains` (the discovered data-flow chains = the finding lis
 `skills/code-review/SKILL.md` (a Claude Code skill, or paste into Claude Desktop
 project instructions). Full setup — Claude Desktop config, CLI commands, env vars,
 gotchas, smoke test — in **`docs/CODE_REVIEW_INTEGRATION.md`**.
+
+---
+
+## Revision-aware research memory (Firefox / source-code review)
+
+```python
+from agentmem import ResearchMemory
+
+m = ResearchMemory("firefox.db")                     # schema auto-migrates to v3
+snap = m.register_snapshot("firefox", "<full commit sha>", scope="dom/media")
+
+# scoped value identities (a `data` here is NOT the `data` in another function)
+src  = m.add_value_identity(snap, "dom/Parser.cpp", "len", role="source", symbol_id="Parser::Parse", start_line=120)
+sink = m.add_value_identity(snap, "ipc/Chan.cpp",  "n",  role="sink",  symbol_id="Chan::Write", start_line=40, sink_type="buffer")
+
+# an EXPLICIT, provenance-bearing flow edge — never inferred from the name
+m.add_flow_edge(snap, src, sink, kind="interprocedural", status="supported",
+                trust="tool_verified", caller_symbol="Parser::Parse",
+                callee_symbol="Chan::Write", arg_index=1, param_name="n")
+
+for c in m.chains(snap):
+    print(c["status"], c["goal"], c["narrative"])    # weakest-link status; 'demonstrated' only if every step is
+```
+
+Record analysis output / crashes as immutable evidence (`record_analysis_result`,
+`record_crash_artifact`), model sanitizers as `add_guard` on the exact edge they
+cover, and retrieve with `search_evidence` (free-text works without embeddings;
+exact-revision first, other revisions labelled stale). Drive it from Claude via the
+**Firefox research MCP** (`python -m agentmem.research_mcp`, tools with stable error
+codes + idempotency). Back it up with `python -m agentmem.backup`. Full guide:
+**[docs/FIREFOX_RESEARCH.md](../docs/FIREFOX_RESEARCH.md)**.
 
 ---
 
@@ -156,9 +220,20 @@ agentmem/
   mcp_server.py     MCP server (Claude Desktop / Claude Code) exposing the facade
 skills/code-review/SKILL.md   the memory-driven code-review method for Claude
 docs/CODE_REVIEW_INTEGRATION.md  setup for Claude Desktop + Claude Code CLI
-tests/              stdlib unittest (52 tests; web chains + code-review taint chains)
+  research.py       revision-aware research-evidence memory (ResearchMemory):
+                    snapshots, scoped value identities, EXPLICIT flow edges,
+                    guards, evidence/hypothesis/validation/finding lifecycle,
+                    consensus, append-only reclassification, SQL-side retrieval
+  research_tools.py MCP contract layer: stable error codes, idempotency, validation
+  research_mcp.py   Firefox research MCP server (stdio; thin transport over tools)
+  schema_research.sql / schema_firefox.sql   v2 / v3 research + Firefox tables
+  migrations.py     schema_version + additive forward migrations (refuses newer)
+  artifacts.py      immutable content-addressed artifact store (SHA-256, atomic)
+  backup.py         backup / restore / verify (metadata DB + artifacts, by digest)
+tests/              stdlib unittest (110 tests; web + research/Firefox evidence)
 examples/demo.py              web exploit-chain demo
 examples/codereview_demo.py   code-review taint-chain demo (same engine)
+benchmarks/bench_retrieval.py reproducible retrieval benchmark (1k/10k/50k)
 ```
 
 ## Any domain, one engine (profiles)
