@@ -58,7 +58,9 @@ HYPOTHESIS_STATUSES = ("open", "supported", "rejected", "superseded")
 VALIDATION_STATUSES = ("not_run", "passed", "failed", "inconclusive", "intermittent")
 FINDING_STATUSES = ("draft", "in_review", "accepted", "duplicate", "closed")
 
-_MAX_PATH_DEPTH = 24          # bound chain search (defensive; research graphs are small)
+_MAX_PATH_DEPTH = 24          # bound chain-search path length
+_MAX_FANOUT = 64              # bound per-node expansion (dense flow graphs)
+_MAX_CHAIN_RESULTS = 500      # hard cap on materialized chains per call (prevents blowup)
 
 
 def _digest(*parts: str) -> str:
@@ -364,6 +366,15 @@ class ResearchMemory:
         status = self._gate_evidence_status(status, trust or ev["trust"])
         with self.store.transaction():
             self.conn.execute("UPDATE evidence SET status=? WHERE id=?", (status, evidence_id))
+            # keep the text index in sync: a rejected/stale item must not keep
+            # surfacing as a live free-text hit (it remains findable by status).
+            if self.store.fts_enabled:
+                if status in ("rejected", "stale"):
+                    self.conn.execute("DELETE FROM evidence_fts WHERE evidence_id=?", (evidence_id,))
+                elif ev["status"] in ("rejected", "stale") and ev["projection"]:
+                    self.conn.execute(
+                        "INSERT INTO evidence_fts(text,evidence_id,snapshot_id,kind) VALUES(?,?,?,?)",
+                        (ev["projection"], evidence_id, ev["snapshot_id"], ev["kind"]))
             self.store.add_audit("set_evidence_status", "evidence", evidence_id,
                                  actor=self.actor, session=self.session,
                                  old_state=ev["status"], new_state=status, rationale=reason)
@@ -501,6 +512,19 @@ class ResearchMemory:
         return vid
 
     # ---- findings -------------------------------------------------------- #
+    def _impact_is_backed(self, snapshot_id: Optional[int], hypothesis_id: Optional[int]) -> bool:
+        """True iff a 'demonstrated' impact is actually supported by evidence: a
+        demonstrated chain in the snapshot, or a passed validation on the hypothesis."""
+        if snapshot_id is not None:
+            if any(c["status"] == "demonstrated" for c in self.chains(snapshot_id)):
+                return True
+        if hypothesis_id is not None:
+            if self.conn.execute(
+                    "SELECT 1 FROM validation_runs WHERE hypothesis_id=? AND status='passed'",
+                    (hypothesis_id,)).fetchone() is not None:
+                return True
+        return False
+
     def add_finding(self, snapshot_id: Optional[int], title: str, root_cause: str = "",
                     severity: str = "", status: str = "draft", impact_state: str = "unproven",
                     hypothesis_id: Optional[int] = None, fingerprint: str = "",
@@ -512,6 +536,11 @@ class ResearchMemory:
             raise ValueError(f"invalid finding status: {status}")
         if impact_state not in ("unproven", "suspected", "demonstrated"):
             raise ValueError(f"invalid impact_state: {impact_state}")
+        # gate: 'demonstrated' impact requires real backing evidence — a demonstrated
+        # chain in this snapshot or a passed validation on the finding's hypothesis.
+        # Without it, impact is at most 'suspected' (an assertion is not a demonstration).
+        if impact_state == "demonstrated" and not self._impact_is_backed(snapshot_id, hypothesis_id):
+            impact_state = "suspected"
         fp = fingerprint or _digest(str(snapshot_id), root_cause or title)
         existing = self.conn.execute("SELECT id FROM findings WHERE fingerprint=?", (fp,)).fetchone()
         if existing is not None:
@@ -576,6 +605,11 @@ class ResearchMemory:
                      e["provenance_id"], e["evidence_id"], (e["version"] or 1) + 1, now, now))
                 self.conn.execute("UPDATE flow_edges SET superseded_by=? WHERE id=?",
                                   (ne.lastrowid, e["id"]))
+                # carry current evidence refs forward so they do not dangle on the
+                # now-closed edge (history is preserved via the edge's valid_to)
+                self.conn.execute(
+                    "UPDATE evidence SET flow_edge_id=? WHERE flow_edge_id=? AND valid_to IS NULL",
+                    (ne.lastrowid, e["id"]))
             # stale any materialized research chains that referenced the closed edges
             self.conn.execute(
                 "UPDATE research_chains SET status='stale' WHERE id IN ("
@@ -587,21 +621,23 @@ class ResearchMemory:
         return new_vid
 
     # ---- cross-revision staleness --------------------------------------- #
-    def evidence_for(self, snapshot_id: int, include_historical: bool = False) -> dict:
+    def evidence_for(self, snapshot_id: int, include_historical: bool = False,
+                     limit: int = 200) -> dict:
         """Current evidence for a snapshot. Evidence from OTHER revisions is never
         returned as current: with include_historical=True it is returned in a
-        separate list, each row labelled stale + revision_mismatch."""
+        separate list, each row labelled stale + revision_mismatch. Both lists are
+        bounded by `limit` (no unbounded scan)."""
         self._require_snapshot(snapshot_id)
         cur = [dict(r) for r in self.conn.execute(
-            "SELECT * FROM evidence WHERE snapshot_id=? AND valid_to IS NULL ORDER BY id",
-            (snapshot_id,)).fetchall()]
+            "SELECT * FROM evidence WHERE snapshot_id=? AND valid_to IS NULL ORDER BY id LIMIT ?",
+            (snapshot_id, limit)).fetchall()]
         for e in cur:
             e["stale"], e["revision_mismatch"] = False, False
         result = {"current": cur, "historical": []}
         if include_historical:
             hist = [dict(r) for r in self.conn.execute(
-                "SELECT * FROM evidence WHERE (snapshot_id IS NULL OR snapshot_id!=?) ORDER BY id",
-                (snapshot_id,)).fetchall()]
+                "SELECT * FROM evidence WHERE (snapshot_id IS NULL OR snapshot_id!=?) "
+                "AND valid_to IS NULL ORDER BY id LIMIT ?", (snapshot_id, limit)).fetchall()]
             for e in hist:
                 e["stale"], e["revision_mismatch"] = True, True
                 e["stale_reason"] = e.get("stale_reason") or "recorded against a different revision"
@@ -731,17 +767,22 @@ class ResearchMemory:
                         kind: Optional[str] = None, status: Optional[str] = None,
                         path: Optional[str] = None, symbol_id: Optional[str] = None,
                         since_ts: Optional[float] = None, limit: int = 20, offset: int = 0,
-                        preview_chars: int = 200) -> list[dict]:
+                        preview_chars: int = 200, revision: str = "any") -> list[dict]:
         """Structured + textual evidence retrieval. ALL filtering, ranking and
         pagination happen in ONE SQL statement (no per-row lookups), so a bounded
         limit issues a constant number of statements regardless of store size.
         Free-text works WITHOUT embeddings (FTS5 MATCH, or a LIKE fallback). When a
         snapshot is given, exact-revision matches rank first and rows from other
-        revisions are labelled stale + revision_mismatch. Returns stable ids and a
-        bounded preview — never the raw artifact."""
+        revisions are labelled stale + revision_mismatch. `revision='current'`
+        hard-filters to the given snapshot (no other-revision rows at all).
+        Returns stable ids and a bounded preview — never the raw artifact."""
         if snapshot_id is not None:
             self._require_snapshot(snapshot_id)
+        if revision not in ("any", "current"):
+            raise ValueError("revision must be 'any' or 'current'")
         joins, where, args = "", ["e.valid_to IS NULL"], []
+        if revision == "current" and snapshot_id is not None:
+            where.append("e.snapshot_id=?"); args.append(snapshot_id)
         if text:
             if self.store.fts_enabled:
                 joins += " JOIN evidence_fts f ON f.evidence_id = e.id"
@@ -813,13 +854,15 @@ class ResearchMemory:
             return f"{v['role']}({v.get('value_name') or ''}@{v.get('symbol_id') or '?'}) {loc}"
 
         def walk(vid: int, path_edges: list[dict], visited: set):
-            if len(path_edges) > _MAX_PATH_DEPTH:
+            # bounded search: cap path length, per-node fan-out, and total results,
+            # so a dense flow graph cannot cause exponential blowup.
+            if len(path_edges) > _MAX_PATH_DEPTH or len(out) >= _MAX_CHAIN_RESULTS:
                 return
             v = vids.get(vid)
             if v is not None and v["role"] == "sink" and path_edges:
                 _emit(path_edges, v)
-            for e in by_src.get(vid, []):
-                if e["dst_vid"] in visited:
+            for e in by_src.get(vid, [])[:_MAX_FANOUT]:
+                if e["dst_vid"] in visited or len(out) >= _MAX_CHAIN_RESULTS:
                     continue
                 walk(e["dst_vid"], path_edges + [e], visited | {e["dst_vid"]})
 

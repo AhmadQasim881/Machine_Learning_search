@@ -59,23 +59,38 @@ class ResearchTools:
         self.conn = mem.conn
 
     # ---- idempotency ----------------------------------------------------- #
-    def _idem_lookup(self, key: str, op: str):
+    @staticmethod
+    def _payload_hash(payload) -> str:
+        import hashlib
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+
+    def _idem_lookup(self, key: str, op: str, payload=None):
+        """Replay only when the SAME key is reused for the SAME op AND the SAME
+        arguments. A key reused for a different op, or the same op with different
+        arguments, is a CONFLICT — not a silent replay of the first result."""
         if not key:
             return None
         row = self.conn.execute(
-            "SELECT op,result_kind,result_id FROM idempotency_keys WHERE key=?", (key,)).fetchone()
+            "SELECT op,result_kind,result_id,payload_hash FROM idempotency_keys WHERE key=?",
+            (key,)).fetchone()
         if row is None:
             return None
         if row["op"] != op:
             return _err(CONFLICT, f"idempotency key already used for a different op ({row['op']})")
+        ph = self._payload_hash(payload) if payload is not None else None
+        if ph is not None and row["payload_hash"] not in (None, ph):
+            return _err(CONFLICT, "idempotency key reused with different arguments")
         return _ok({row["result_kind"]: row["result_id"], "idempotent_replay": True})
 
-    def _idem_store(self, key: str, op: str, result_kind: str, result_id: int) -> None:
+    def _idem_store(self, key: str, op: str, result_kind: str, result_id: int,
+                    payload=None) -> None:
         if not key:
             return
+        ph = self._payload_hash(payload) if payload is not None else None
         self.conn.execute(
-            "INSERT OR IGNORE INTO idempotency_keys(key,op,result_kind,result_id,created_ts) "
-            "VALUES(?,?,?,?,?)", (key, op, result_kind, result_id, time.time()))
+            "INSERT OR IGNORE INTO idempotency_keys(key,op,result_kind,result_id,payload_hash,"
+            "created_ts) VALUES(?,?,?,?,?,?)", (key, op, result_kind, result_id, ph, time.time()))
 
     # ---- snapshots / source -------------------------------------------- #
     def register_repository_snapshot(self, repo_id: str = "", commit_id: str = "",
@@ -83,14 +98,15 @@ class ResearchTools:
                                      scope: str = "", idempotency_key: str = "") -> dict:
         if not repo_id or not commit_id:
             return _err(INVALID_ARGUMENT, "repo_id and commit_id are required")
-        replay = self._idem_lookup(idempotency_key, "register_repository_snapshot")
+        payload = {k: v for k, v in locals().items() if k not in ("self", "idempotency_key")}
+        replay = self._idem_lookup(idempotency_key, "register_repository_snapshot", payload)
         if replay is not None:
             return replay
         try:
             sid = self.m.register_snapshot(repo_id, commit_id, dirty, patch_digest, scope)
         except ValueError as e:
             return _err(_classify(e), str(e))
-        self._idem_store(idempotency_key, "register_repository_snapshot", "snapshot_id", sid)
+        self._idem_store(idempotency_key, "register_repository_snapshot", "snapshot_id", sid, payload)
         return _ok({"snapshot_id": sid})
 
     def record_source_reference(self, snapshot_id: int = 0, path: str = "", start_line: int = 0,
@@ -159,7 +175,8 @@ class ResearchTools:
                           idempotency_key: str = "") -> dict:
         if not statement:
             return _err(INVALID_ARGUMENT, "statement is required")
-        replay = self._idem_lookup(idempotency_key, "record_hypothesis")
+        payload = {k: v for k, v in locals().items() if k not in ("self", "idempotency_key")}
+        replay = self._idem_lookup(idempotency_key, "record_hypothesis", payload)
         if replay is not None:
             return replay
         try:
@@ -167,7 +184,7 @@ class ResearchTools:
                                         scope=scope, next_action=next_action)
         except ValueError as e:
             return _err(_classify(e), str(e))
-        self._idem_store(idempotency_key, "record_hypothesis", "hypothesis_id", hid)
+        self._idem_store(idempotency_key, "record_hypothesis", "hypothesis_id", hid, payload)
         return _ok({"hypothesis_id": hid})
 
     def record_counter_evidence(self, hypothesis_id: int = 0, evidence_id: Optional[int] = None,

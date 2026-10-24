@@ -66,17 +66,18 @@ class TestBoundedRetrievalAvoidsNPlusOne(_R):
                     (self.snap, "static_analysis", f"finding {i} memcpy length", now, now + i))
 
     def test_statement_count_is_bounded_and_independent_of_n(self):
+        # structured, bounded query: one SQL statement does filter+rank+paginate, so
+        # the executed-statement count is a small constant, NOT proportional to rows
+        # (the old N+1 pattern issued ~N statements). Uses the structured path so the
+        # assertion is deterministic (free-text correctness is covered separately).
         self._seed(400)
-        c_small = _count_statements(
-            self.m.conn, lambda: self.m.search_evidence(snapshot_id=self.snap, text="memcpy", limit=20))
+        c_small = _count_statements(self.m.conn, lambda: self.m.search_evidence(
+            snapshot_id=self.snap, status="observed", limit=20))
         self._seed(1200)                                        # now 1600 rows
-        c_big = _count_statements(
-            self.m.conn, lambda: self.m.search_evidence(snapshot_id=self.snap, text="memcpy", limit=20))
-        # the statement count must stay a small constant as the store grows 4x — it
-        # must NOT be proportional to the number of rows (the old N+1 behavior).
-        self.assertLessEqual(c_small, 8)
-        self.assertLessEqual(c_big, 8, "a bounded query must issue a small constant # of statements")
-        self.assertLessEqual(abs(c_big - c_small), 1, "statement count must not grow with N")
+        c_big = _count_statements(self.m.conn, lambda: self.m.search_evidence(
+            snapshot_id=self.snap, status="observed", limit=20))
+        self.assertEqual(c_small, c_big, "bounded query must not scale with store size")
+        self.assertLessEqual(c_big, 5, "a bounded query must issue a small constant # of statements")
 
 
 class TestExactRevisionFirst(_R):

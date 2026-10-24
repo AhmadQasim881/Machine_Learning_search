@@ -20,7 +20,7 @@ from __future__ import annotations
 import os
 import sqlite3
 
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 
 _RESEARCH_SQL = os.path.join(os.path.dirname(__file__), "schema_research.sql")
 _FIREFOX_SQL = os.path.join(os.path.dirname(__file__), "schema_firefox.sql")
@@ -102,7 +102,16 @@ def _migrate_to_3(conn: sqlite3.Connection) -> None:
         conn.executescript(fh.read())
 
 
+def _migrate_to_4(conn: sqlite3.Connection) -> None:
+    """v3 -> v4: true idempotency — store a payload hash so a key reused with
+    different arguments conflicts instead of silently replaying. Additive column."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(idempotency_keys)").fetchall()}
+    if "payload_hash" not in cols:
+        conn.execute("ALTER TABLE idempotency_keys ADD COLUMN payload_hash TEXT")
+
+
 _STEPS = {
     2: _migrate_to_2,
     3: _migrate_to_3,
+    4: _migrate_to_4,
 }
