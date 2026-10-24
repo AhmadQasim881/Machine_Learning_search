@@ -525,13 +525,33 @@ class ResearchMemory:
                 return True
         return False
 
+    def _finding_fingerprint(self, snapshot_id, symbols, sink_class, root_cause, title,
+                             hypothesis_id) -> str:
+        """A stable defect fingerprint from the AFFECTED SYMBOLS + sink class + a
+        normalized root cause — not the report title. If no symbols are supplied,
+        derive them from the finding's hypothesis (the symbols on its linked flow
+        edges / value identities), so two reports of the same underlying defect
+        collapse even when their titles differ."""
+        syms = set(symbols or [])
+        if not syms and hypothesis_id is not None:
+            for r in self.conn.execute(
+                    "SELECT DISTINCT v.symbol_id AS s FROM hypothesis_evidence he "
+                    "JOIN flow_edges fe ON fe.id=he.flow_edge_id "
+                    "JOIN value_identities v ON v.id IN (fe.src_vid, fe.dst_vid) "
+                    "WHERE he.hypothesis_id=? AND v.symbol_id IS NOT NULL", (hypothesis_id,)).fetchall():
+                if r["s"]:
+                    syms.add(r["s"])
+        norm_rc = " ".join((root_cause or title or "").lower().split())
+        return _digest(str(snapshot_id), "|".join(sorted(syms)), sink_class or "", norm_rc)
+
     def add_finding(self, snapshot_id: Optional[int], title: str, root_cause: str = "",
                     severity: str = "", status: str = "draft", impact_state: str = "unproven",
                     hypothesis_id: Optional[int] = None, fingerprint: str = "",
+                    symbols: Optional[list] = None, sink_class: str = "",
                     provenance_id: Optional[int] = None) -> int:
-        """Record a finding. Deduped on a defect FINGERPRINT (root cause + affected
-        symbols), not the report title. impact_state is separate from the finding's
-        review lifecycle and defaults to 'unproven'."""
+        """Record a finding. Deduped on a defect FINGERPRINT (affected symbols + sink
+        class + normalized root cause), not the report title. impact_state is
+        separate from the finding's review lifecycle and defaults to 'unproven'."""
         if status not in FINDING_STATUSES:
             raise ValueError(f"invalid finding status: {status}")
         if impact_state not in ("unproven", "suspected", "demonstrated"):
@@ -541,7 +561,8 @@ class ResearchMemory:
         # Without it, impact is at most 'suspected' (an assertion is not a demonstration).
         if impact_state == "demonstrated" and not self._impact_is_backed(snapshot_id, hypothesis_id):
             impact_state = "suspected"
-        fp = fingerprint or _digest(str(snapshot_id), root_cause or title)
+        fp = fingerprint or self._finding_fingerprint(snapshot_id, symbols, sink_class,
+                                                      root_cause, title, hypothesis_id)
         existing = self.conn.execute("SELECT id FROM findings WHERE fingerprint=?", (fp,)).fetchone()
         if existing is not None:
             return existing["id"]

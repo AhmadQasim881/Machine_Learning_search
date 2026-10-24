@@ -108,5 +108,31 @@ class TestReclassifyCarriesEvidenceForward(_R):
         self.assertIsNone(row["valid_to"])                    # points at a current edge
 
 
+class TestFindingFingerprint(_R):
+    def test_same_defect_dedupes_across_different_titles(self):
+        f1 = self.m.add_finding(self.snap, "Heap overflow in Foo", root_cause="unchecked size",
+                                symbols=["mozilla::Foo::Parse"], sink_class="buffer")
+        f2 = self.m.add_finding(self.snap, "OOB write (Foo)", root_cause="Unchecked  SIZE",
+                                symbols=["mozilla::Foo::Parse"], sink_class="buffer")
+        self.assertEqual(f1, f2)                              # same defect -> one finding
+        self.assertEqual(self.m.conn.execute("SELECT COUNT(*) c FROM findings").fetchone()["c"], 1)
+
+    def test_different_symbols_are_distinct_findings(self):
+        f1 = self.m.add_finding(self.snap, "x", root_cause="rc", symbols=["A::f"], sink_class="sql")
+        f2 = self.m.add_finding(self.snap, "x", root_cause="rc", symbols=["B::g"], sink_class="sql")
+        self.assertNotEqual(f1, f2)
+
+    def test_symbols_derived_from_hypothesis(self):
+        src = self.m.add_value_identity(self.snap, "f.cpp", "x", role="source", symbol_id="Caller")
+        sink = self.m.add_value_identity(self.snap, "f.cpp", "q", role="sink", symbol_id="Sink",
+                                         sink_type="sql")
+        edge = self.m.add_flow_edge(self.snap, src, sink, status="supported")
+        h = self.m.add_hypothesis(self.snap, "H")
+        self.m.link_evidence(h, "supports", flow_edge_id=edge)
+        f1 = self.m.add_finding(self.snap, "report A", root_cause="rc", hypothesis_id=h)
+        f2 = self.m.add_finding(self.snap, "report B different title", root_cause="rc", hypothesis_id=h)
+        self.assertEqual(f1, f2)                              # symbols derived from the shared hypothesis
+
+
 if __name__ == "__main__":
     unittest.main()
