@@ -91,9 +91,28 @@ edges from CodeQL's own threadFlow ordering — nothing is inferred from a share
 name. A CodeQL path is tool **evidence**, so edges import as `supported` /
 `tool_verified` (never `demonstrated`; that needs dynamic validation). `ruleId` is
 mapped to a sink type (e.g. `cpp/sql-injection` → `sql`, `cpp/command-line-injection`
-→ `command`). This is the adapter that turns the memory from a manual ledger into a
-pipeline; a Searchfox/compile-commands symbol importer and an ASan-log parser are
-the natural next adapters under the same contract.
+→ `command`).
+
+Three adapters exist under the same "record, don't produce" contract (the
+producing indexer/analyzer runs outside agentmem and emits the normalized input):
+
+```python
+from agentmem.importers import import_sarif, import_symbols, import_sanitizer_log
+
+import_sarif(m, snap, sarif_text)            # CodeQL path -> identities + flow edges + evidence
+import_symbols(m, snap, symbol_index)        # Searchfox / compile_commands index -> code_symbols + relations
+import_sanitizer_log(m, snap, asan_text)     # ASan/UBSan log -> crash evidence + a validation run
+```
+
+- `import_symbols` ingests a normalized `{symbols:[...], relations:[...]}` index
+  (produced by a Searchfox-derived adapter or a Clang/`compile_commands.json`
+  indexer) into `code_symbols` + `symbol_relations`, preserving call `dispatch`
+  (direct/virtual/function_pointer/unresolved) and flagging relation endpoints
+  outside the imported set so coverage gaps stay visible.
+- `import_sanitizer_log` parses an ASan/UBSan report (error type, access, top
+  frames), preserves the raw log verbatim as an artifact, and records a `crash`
+  evidence row (status `observed`) + a `repro` validation run. A parsed crash does
+  **not** create a finding or assign severity — that is a separate judgement.
 
 ## MCP for Claude Desktop / Claude Code
 
