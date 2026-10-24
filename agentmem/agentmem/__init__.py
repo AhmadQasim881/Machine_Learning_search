@@ -20,4 +20,5 @@ __version__ = "0.3.0"
 
 from .memory import Memory  # noqa: F401
 from .profiles import CODEREVIEW, WEB, Profile  # noqa: F401
+from .research import ResearchMemory  # noqa: F401
 from .store import Store    # noqa: F401
