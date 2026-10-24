@@ -608,6 +608,119 @@ class ResearchMemory:
             result["historical"] = hist
         return result
 
+    # ---- Firefox record model (external-analyzer evidence) -------------- #
+    def add_boundary(self, snapshot_id: int, name: str, kind: str = "process",
+                     description: str = "") -> int:
+        """Register a trust/process/sandbox/origin/principal boundary. Deduped on
+        (snapshot, name). A defect in a sandboxed domain does not by itself cross a
+        boundary — crossings must be recorded explicitly as evidence."""
+        self._require_snapshot(snapshot_id)
+        row = self.conn.execute(
+            "SELECT id FROM boundaries WHERE snapshot_id=? AND name=?", (snapshot_id, name)).fetchone()
+        if row is not None:
+            return row["id"]
+        with self.store.transaction():
+            cur = self.conn.execute(
+                "INSERT INTO boundaries(snapshot_id,name,kind,description,created_ts,meta_json) "
+                "VALUES(?,?,?,?,?,'{}')", (snapshot_id, name, kind, description or None, time.time()))
+            bid = cur.lastrowid
+            self.store.add_audit("add_boundary", "boundaries", bid, actor=self.actor,
+                                 session=self.session, new_state=f"{kind}:{name}")
+        return bid
+
+    def register_symbol(self, snapshot_id: int, symbol_id: str, qualified_name: str = "",
+                        language: str = "", kind: str = "function", path: str = "",
+                        start_line: int = 0, end_line: int = 0, trust_domain: str = "",
+                        provenance_id: Optional[int] = None) -> int:
+        """Register a code symbol (C++/Rust/JS/WebIDL/IPDL) produced by an external
+        index. Deduped on (snapshot, symbol_id); path is case-sensitive."""
+        self._require_snapshot(snapshot_id)
+        row = self.conn.execute(
+            "SELECT id FROM code_symbols WHERE snapshot_id=? AND symbol_id=?",
+            (snapshot_id, symbol_id)).fetchone()
+        if row is not None:
+            return row["id"]
+        with self.store.transaction():
+            cur = self.conn.execute(
+                "INSERT INTO code_symbols(snapshot_id,symbol_id,qualified_name,language,kind,"
+                "path,start_line,end_line,trust_domain,provenance_id,created_ts,meta_json) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,'{}')",
+                (snapshot_id, symbol_id, qualified_name or None, language or None, kind,
+                 path or None, start_line or None, end_line or None, trust_domain or None,
+                 provenance_id, time.time()))
+            sid = cur.lastrowid
+            self.store.add_audit("register_symbol", "code_symbols", sid, actor=self.actor,
+                                 session=self.session, new_state=symbol_id)
+        return sid
+
+    def link_symbols(self, snapshot_id: int, src_symbol: str, dst_symbol: str,
+                     relation: str = "calls", dispatch: str = "direct",
+                     callsite_path: str = "", callsite_line: int = 0,
+                     boundary_id: Optional[int] = None, confidence: float = 0.5,
+                     provenance_id: Optional[int] = None) -> int:
+        """Record a directed symbol relationship (calls|inherits|implements|binds|
+        crosses_boundary). `dispatch` preserves call uncertainty (a virtual/pointer
+        target is possible, not an observed execution)."""
+        self._require_snapshot(snapshot_id)
+        if relation not in ("calls", "inherits", "implements", "binds", "crosses_boundary"):
+            raise ValueError(f"invalid symbol relation: {relation}")
+        if boundary_id is not None and self.conn.execute(
+                "SELECT 1 FROM boundaries WHERE id=?", (boundary_id,)).fetchone() is None:
+            raise ValueError(f"unknown boundary {boundary_id}")
+        cur = self.conn.execute(
+            "INSERT INTO symbol_relations(snapshot_id,src_symbol,dst_symbol,relation,dispatch,"
+            "callsite_path,callsite_line,boundary_id,confidence,provenance_id,created_ts,meta_json) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,'{}')",
+            (snapshot_id, src_symbol, dst_symbol, relation, dispatch, callsite_path or None,
+             callsite_line or None, boundary_id, confidence, provenance_id, time.time()))
+        return cur.lastrowid
+
+    def callees(self, snapshot_id: int, symbol: str, limit: int = 100) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM symbol_relations WHERE snapshot_id=? AND src_symbol=? AND relation='calls' "
+            "ORDER BY id LIMIT ?", (snapshot_id, symbol, limit)).fetchall()
+        return [dict(r) for r in rows]
+
+    def callers(self, snapshot_id: int, symbol: str, limit: int = 100) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM symbol_relations WHERE snapshot_id=? AND dst_symbol=? AND relation='calls' "
+            "ORDER BY id LIMIT ?", (snapshot_id, symbol, limit)).fetchall()
+        return [dict(r) for r in rows]
+
+    def record_analysis_result(self, snapshot_id: int, tool: str, raw: str,
+                               query_id: str = "", tool_version: str = "",
+                               value_identity_id: Optional[int] = None,
+                               status: str = "observed", trust: str = "tool_verified",
+                               media_type: str = "application/sarif+json") -> dict:
+        """Convenience: record an external static-analysis result as provenance +
+        an immutable raw artifact + an evidence row (kind='static_analysis'). The
+        raw output is preserved verbatim; the evidence projection is bounded."""
+        prov = self.add_provenance(snapshot_id, tool=tool, tool_version=tool_version,
+                                   query_id=query_id, actor=tool, actor_kind="tool", trust=trust)
+        eid = self.add_evidence(snapshot_id, "static_analysis", raw=raw, status=status,
+                                trust=trust, provenance_id=prov,
+                                value_identity_id=value_identity_id, media_type=media_type)
+        return {"provenance_id": prov, "evidence_id": eid}
+
+    def record_crash_artifact(self, snapshot_id: int, raw_log: str, kind: str = "crash",
+                             validation_run_id: Optional[int] = None,
+                             trust: str = "tool_verified") -> int:
+        """Record a crash/sanitizer log as an immutable artifact + evidence. A
+        parsed crash does not set finding severity or prove exploitability."""
+        return self.add_evidence(snapshot_id, kind, raw=raw_log, status="observed",
+                                 trust=trust, flow_edge_id=None, media_type="text/plain")
+
+    # ---- audit ----------------------------------------------------------- #
+    def audit_log(self, affected_table: Optional[str] = None, limit: int = 200) -> list[dict]:
+        if affected_table:
+            rows = self.conn.execute(
+                "SELECT * FROM audit_events WHERE affected_table=? ORDER BY id DESC LIMIT ?",
+                (affected_table, limit)).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM audit_events ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
     # ---- retrieval (SQL-side filter + paginate + rank; no N+1) ---------- #
     def text_search_backend(self) -> str:
         """Which text-search backend is active: 'fts5' when the SQLite build has

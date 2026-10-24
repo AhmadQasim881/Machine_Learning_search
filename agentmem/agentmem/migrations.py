@@ -20,9 +20,10 @@ from __future__ import annotations
 import os
 import sqlite3
 
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 
 _RESEARCH_SQL = os.path.join(os.path.dirname(__file__), "schema_research.sql")
+_FIREFOX_SQL = os.path.join(os.path.dirname(__file__), "schema_firefox.sql")
 
 # kv_meta keys written by migrations
 _K_VERSION = "schema_version"
@@ -94,6 +95,14 @@ def _migrate_to_2(conn: sqlite3.Connection) -> None:
         (_K_FTS, "1" if has_fts else "0"))
 
 
+def _migrate_to_3(conn: sqlite3.Connection) -> None:
+    """v2 -> v3: add the Firefox research record model (symbols, call/inheritance
+    relations, trust boundaries). Additive."""
+    with open(_FIREFOX_SQL, encoding="utf-8") as fh:
+        conn.executescript(fh.read())
+
+
 _STEPS = {
     2: _migrate_to_2,
+    3: _migrate_to_3,
 }
