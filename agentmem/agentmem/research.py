@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 from typing import Optional
 
@@ -744,6 +745,138 @@ class ResearchMemory:
                                              rationale=note)
                         counts["findings"] += 1
         return counts
+
+    # ---- disclosure-grade evidence bundle ------------------------------- #
+    def export_bundle_to_dir(self, snapshot_id: int, dest_dir: str) -> dict:
+        """Write a self-contained, independently reviewable evidence bundle for a
+        snapshot: a manifest.json (snapshot identity, chains, findings, evidence
+        metadata each with its artifact SHA-256) plus the referenced raw artifacts
+        copied by digest into artifacts/. Each artifact is re-verified on copy, so a
+        reviewer can confirm the evidence resolves to its bytes. Returns a summary."""
+        snap = self.get_snapshot(snapshot_id)
+        if snap is None:
+            raise ValueError(f"unknown snapshot {snapshot_id}")
+        os.makedirs(os.path.join(dest_dir, "artifacts"), exist_ok=True)
+
+        evidence = [dict(r) for r in self.conn.execute(
+            "SELECT id,kind,status,trust,projection,artifact_id,source_ref_id,flow_edge_id,"
+            "value_identity_id FROM evidence WHERE snapshot_id=? AND valid_to IS NULL ORDER BY id",
+            (snapshot_id,)).fetchall()]
+        findings = [dict(r) for r in self.conn.execute(
+            "SELECT id,fingerprint,title,root_cause,status,severity,impact_state FROM findings "
+            "WHERE snapshot_id=? ORDER BY id", (snapshot_id,)).fetchall()]
+        chains = self.chains(snapshot_id)
+
+        # collect every artifact referenced by this snapshot's evidence/source refs/
+        # validation runs, copy each blob by digest (verified), and record its sha.
+        art_ids: set = set()
+        for q in ("SELECT artifact_id AS a FROM evidence WHERE snapshot_id=? AND artifact_id IS NOT NULL",
+                  "SELECT excerpt_artifact_id AS a FROM source_refs WHERE snapshot_id=? AND excerpt_artifact_id IS NOT NULL",
+                  "SELECT artifact_id AS a FROM validation_runs WHERE snapshot_id=? AND artifact_id IS NOT NULL"):
+            for r in self.conn.execute(q, (snapshot_id,)).fetchall():
+                art_ids.add(r["a"])
+        artifacts = []
+        for aid in sorted(art_ids):
+            row = self.store.artifact_row(aid)
+            if row is None:
+                continue
+            data = self.store.get_artifact_bytes(aid, verify=True)   # raises on corruption
+            with open(os.path.join(dest_dir, "artifacts", row["sha256"]), "wb") as fh:
+                fh.write(data)
+            artifacts.append({"sha256": row["sha256"], "media_type": row["media_type"],
+                              "size": row["size"]})
+        # annotate each evidence item with its artifact digest
+        by_id = {a: self.store.artifact_row(a) for a in art_ids}
+        for e in evidence:
+            r = by_id.get(e["artifact_id"])
+            e["artifact_sha256"] = r["sha256"] if r else None
+
+        manifest = {
+            "agentmem_bundle": 1, "created_ts": time.time(),
+            "snapshot": {"id": snap["id"], "repo_id": snap["repo_id"],
+                         "commit_id": snap["commit_id"], "dirty": bool(snap["dirty"]),
+                         "patch_digest": snap["patch_digest"], "scope": snap["scope"]},
+            "chains": chains, "findings": findings, "evidence": evidence,
+            "artifacts": artifacts,
+        }
+        with open(os.path.join(dest_dir, "manifest.json"), "w", encoding="utf-8") as fh:
+            json.dump(manifest, fh, indent=2, default=str)
+        return {"dest_dir": dest_dir, "evidence": len(evidence), "findings": len(findings),
+                "chains": len(chains), "artifacts": len(artifacts)}
+
+    # ---- claim coverage + boundary composition -------------------------- #
+    def claim_coverage(self, hypothesis_id: int) -> dict:
+        """Classify a hypothesis's SUPPORTING links by evidence strength: 'direct'
+        (source excerpt / static-analysis / dataflow / value-identity evidence),
+        'dynamic' (a validation run, or crash/test evidence), or 'modeled' (only a
+        flow edge, no backing evidence). Reports whether the hypothesis is
+        uncovered (no supporting evidence at all) and whether counter-evidence
+        exists. This is the "which statements have real evidence" view."""
+        h = self.get_hypothesis(hypothesis_id)
+        if h is None:
+            raise ValueError(f"unknown hypothesis {hypothesis_id}")
+        cov = {"direct": 0, "dynamic": 0, "modeled": 0}
+        claims, has_counter = [], False
+        for l in self.conn.execute(
+                "SELECT * FROM hypothesis_evidence WHERE hypothesis_id=?", (hypothesis_id,)).fetchall():
+            rel = l["relation"]
+            if rel == "contradicts":
+                has_counter = True
+            kind = "modeled"
+            if l["validation_run_id"] is not None:
+                kind = "dynamic"
+            elif l["evidence_id"] is not None:
+                e = self.get_evidence(l["evidence_id"])
+                ek = (e or {}).get("kind") or ""
+                if ek in ("crash", "test"):
+                    kind = "dynamic"
+                elif ek in ("source_excerpt", "static_analysis", "dataflow") \
+                        or (e and (e["source_ref_id"] or e["value_identity_id"])):
+                    kind = "direct"
+                else:
+                    kind = "modeled"
+            elif l["flow_edge_id"] is not None:
+                kind = "modeled"
+            if rel in ("supports", "tests", "requires"):
+                cov[kind] += 1
+            claims.append({"relation": rel, "kind": kind, "evidence_id": l["evidence_id"],
+                           "flow_edge_id": l["flow_edge_id"], "validation_run_id": l["validation_run_id"]})
+        return {"hypothesis_id": hypothesis_id, "status": h["status"], "claims": claims,
+                "coverage": cov, "uncovered": sum(cov.values()) == 0,
+                "has_counter_evidence": has_counter}
+
+    def chain_boundary_gaps(self, snapshot_id: int, steps: list) -> list:
+        """Trust/process-boundary composition check: consecutive chain steps whose
+        symbols sit in DIFFERENT trust domains (from code_symbols) with no explicit
+        'crosses_boundary' symbol relation recorded between them. Individually
+        demonstrated transitions can still be incompatible when composed — a
+        boundary crossing must be shown, not assumed."""
+        if not steps:
+            return []
+        vid_seq = [steps[0]["src_vid"]] + [s["dst_vid"] for s in steps]
+        syms, doms = {}, {}
+        for vid in set(vid_seq):
+            v = self.get_value_identity(vid)
+            sym = v.get("symbol_id") if v else None
+            syms[vid] = sym
+            doms[vid] = None
+            if sym:
+                r = self.conn.execute(
+                    "SELECT trust_domain FROM code_symbols WHERE snapshot_id=? AND symbol_id=?",
+                    (snapshot_id, sym)).fetchone()
+                doms[vid] = r["trust_domain"] if r else None
+        gaps = []
+        for i in range(len(vid_seq) - 1):
+            a, b = vid_seq[i], vid_seq[i + 1]
+            da, db = doms.get(a), doms.get(b)
+            if da and db and da != db:
+                covered = self.conn.execute(
+                    "SELECT 1 FROM symbol_relations WHERE snapshot_id=? AND relation='crosses_boundary' "
+                    "AND src_symbol=? AND dst_symbol=?", (snapshot_id, syms[a], syms[b])).fetchone()
+                if not covered:
+                    gaps.append({"from_domain": da, "to_domain": db,
+                                 "from_symbol": syms[a], "to_symbol": syms[b]})
+        return gaps
 
     # ---- Firefox record model (external-analyzer evidence) -------------- #
     def add_boundary(self, snapshot_id: int, name: str, kind: str = "process",

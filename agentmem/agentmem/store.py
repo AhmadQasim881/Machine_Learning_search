@@ -395,6 +395,40 @@ class Store:
         return self.conn.execute(
             "SELECT * FROM artifacts WHERE id=?", (artifact_id,)).fetchone()
 
+    def gc_artifacts(self, grace_seconds: float = 0.0, only_expirable: bool = True) -> dict:
+        """Sweep UNREFERENCED artifacts (blob + row). An artifact is referenced if
+        any evidence, source ref, validation run, or provenance row points at it.
+        By default only artifacts with retention='expirable' are eligible, and only
+        after `grace_seconds` since creation — a 'keep' artifact is never swept.
+        Returns {deleted:[sha256...], count}."""
+        referenced: set = set()
+        for q in ("SELECT artifact_id AS a FROM evidence WHERE artifact_id IS NOT NULL",
+                  "SELECT excerpt_artifact_id AS a FROM source_refs WHERE excerpt_artifact_id IS NOT NULL",
+                  "SELECT artifact_id AS a FROM validation_runs WHERE artifact_id IS NOT NULL",
+                  "SELECT raw_artifact_id AS a FROM provenance WHERE raw_artifact_id IS NOT NULL"):
+            for r in self.conn.execute(q).fetchall():
+                referenced.add(r["a"])
+        cutoff = time.time() - grace_seconds
+        deleted = []
+        with self.transaction():
+            for r in self.conn.execute(
+                    "SELECT id,sha256,storage_path,retention,created_ts FROM artifacts").fetchall():
+                if r["id"] in referenced:
+                    continue
+                if only_expirable and r["retention"] != "expirable":
+                    continue
+                if (r["created_ts"] or 0) > cutoff:
+                    continue
+                try:
+                    os.remove(os.path.join(self.artifacts.root, r["storage_path"]))
+                except OSError:
+                    pass
+                self.conn.execute("DELETE FROM artifacts WHERE id=?", (r["id"],))
+                self.add_audit("gc_artifact", "artifacts", r["id"], new_state="deleted",
+                               rationale=f"unreferenced, retention={r['retention']}")
+                deleted.append(r["sha256"])
+        return {"deleted": deleted, "count": len(deleted)}
+
     # ---- audit ----------------------------------------------------------- #
     def add_audit(self, op: str, affected_table: str = "", affected_id: Optional[int] = None,
                   actor: str = "", session: str = "", correlation_id: str = "",

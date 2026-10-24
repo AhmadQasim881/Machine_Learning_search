@@ -156,6 +156,13 @@ def review_chain(snapshot_id: int, goal: str = "") -> str:
         return _j(_tools().review_chain(snapshot_id, goal))
 
 
+@mcp.tool(description="Claim-coverage view for a hypothesis: classify its supporting evidence as "
+                      "direct / dynamic / modeled, and report if it is uncovered or has counter-evidence.")
+def claim_coverage(hypothesis_id: int) -> str:
+    with _LOCK:
+        return _j(_tools().claim_coverage(hypothesis_id))
+
+
 @mcp.tool(description="Append-only reclassification of a sink's type; retracts/stales the chain "
                       "derived from the old classification.")
 def reclassify_sink(value_identity_id: int, new_sink_type: str, reason: str = "") -> str:

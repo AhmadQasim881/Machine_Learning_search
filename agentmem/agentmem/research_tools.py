@@ -259,15 +259,26 @@ class ResearchTools:
         reviewed = []
         for c in chains:
             gaps = [s for s in c["steps"] if s["status"] != "demonstrated" or s["guard_blocked"]]
+            boundary_gaps = self.m.chain_boundary_gaps(snapshot_id, c["steps"])
+            # a composed chain is 'demonstrated' only if EVERY transition is
+            # demonstrated AND no unproven trust-boundary crossing remains.
+            demonstrated = (c["status"] == "demonstrated" and not gaps and not boundary_gaps)
             reviewed.append({
                 "goal": c["goal"], "status": c["status"], "severity": c["severity"],
                 "impact_state": c["impact_state"], "narrative": c["narrative"],
-                "demonstrated": c["status"] == "demonstrated",
+                "demonstrated": demonstrated,
                 "missing_transitions": [
                     {"flow_edge_id": g["flow_edge_id"], "status": g["status"],
                      "guard_blocked": g["guard_blocked"]} for g in gaps],
+                "boundary_gaps": boundary_gaps,
             })
         return _ok({"chains": reviewed})
+
+    def claim_coverage(self, hypothesis_id: int = 0) -> dict:
+        try:
+            return _ok(self.m.claim_coverage(hypothesis_id))
+        except ValueError as e:
+            return _err(_classify(e), str(e))
 
     def reclassify_sink(self, value_identity_id: int = 0, new_sink_type: str = "",
                         reason: str = "") -> dict:

@@ -108,3 +108,16 @@ python -m agentmem.backup verify  <db_path>              # every artifact row re
 
 `restore` re-verifies that every `artifacts` row resolves to its bytes by digest,
 so a restored database can be trusted before research resumes.
+
+### Evidence bundles and artifact GC
+
+- `ResearchMemory.export_bundle_to_dir(snapshot_id, dest_dir)` writes a
+  self-contained, disclosure-grade bundle: `manifest.json` (snapshot identity,
+  chains, findings, evidence metadata each with its artifact SHA-256) plus the
+  referenced raw artifacts copied by digest into `artifacts/` (re-verified on
+  copy), so another researcher can confirm the evidence resolves to its bytes.
+- `Store.gc_artifacts(grace_seconds, only_expirable=True)` sweeps UNREFERENCED
+  artifacts (not pointed at by any evidence / source ref / validation run /
+  provenance). Only `retention='expirable'` artifacts older than the grace period
+  are eligible; a `retention='keep'` artifact is never swept. Each sweep is
+  audited.

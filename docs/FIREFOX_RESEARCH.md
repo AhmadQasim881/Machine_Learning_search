@@ -147,7 +147,8 @@ exact config shape and gotchas).
 | `record_hypothesis` / `record_counter_evidence` | hypotheses + contradicting evidence |
 | `record_validation_run` | a build/test/repro outcome |
 | `query_history` | revision-aware recall (exact first; historical labelled stale) |
-| `review_chain` | which transitions are demonstrated and which are missing |
+| `review_chain` | which transitions are demonstrated/missing + unproven trust-boundary crossings |
+| `claim_coverage` | classify a hypothesis's support as direct / dynamic / modeled; flags uncovered + counter-evidence |
 | `reclassify_sink` | append-only reclassification (stales the old chain) |
 | `invalidate_changed_paths` | active staleness: mark records on changed paths stale, retract their chains |
 | `export_evidence_bundle` | structured bundle for human review |
