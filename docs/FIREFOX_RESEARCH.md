@@ -74,6 +74,27 @@ for c in m.chains(snap):
     print(c["status"], c["goal"], c["narrative"])   # 'blocked' while the guard holds
 ```
 
+## Importing analyzer output (CodeQL / SARIF)
+
+Instead of hand-entering taint facts, import a CodeQL run directly — its
+`codeFlows` become scoped value identities + explicit flow edges + evidence, with
+the raw SARIF preserved verbatim as an immutable artifact:
+
+```python
+from agentmem.importers import import_sarif
+summary = import_sarif(m, snap, open("results.sarif").read())
+# {'results': N, 'flows': N, 'value_identities': N, 'flow_edges': N, 'evidence': N, ...}
+```
+
+Identities come from exact SARIF locations (uri + region + logical symbol) and
+edges from CodeQL's own threadFlow ordering — nothing is inferred from a shared
+name. A CodeQL path is tool **evidence**, so edges import as `supported` /
+`tool_verified` (never `demonstrated`; that needs dynamic validation). `ruleId` is
+mapped to a sink type (e.g. `cpp/sql-injection` → `sql`, `cpp/command-line-injection`
+→ `command`). This is the adapter that turns the memory from a manual ledger into a
+pipeline; a Searchfox/compile-commands symbol importer and an ASan-log parser are
+the natural next adapters under the same contract.
+
 ## MCP for Claude Desktop / Claude Code
 
 Run the research MCP server (stdio):
